@@ -13,7 +13,7 @@
 // --- CONFIGURATION -------------------------------------------
 const SIM_CONFIG = {
   // !! REPLACE with Apps Script Web App URL after Step 4 deploy !!
-  apiUrl: 'PASTE_APPS_SCRIPT_WEB_APP_URL_HERE',
+  apiUrl: 'https://script.google.com/macros/s/AKfycbxOLBFr8lxyoUD7IN_cWW7EdkWTnJjuT6pOfbBpvPpLKFxvwO8m0mjMJveKRHK3_DIE8Q/exec',
   startingResources: {
     budgetRemaining:       600,  // Rs 600L (Rs 6 crore total)
     changeCapital:         100,  // 100 pts; persists round-to-round
