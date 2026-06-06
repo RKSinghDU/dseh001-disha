@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Project Disha — DSEH001 Simulation Login</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="header">
+  <div class="header-inner">
+    <h1>PROJECT <span class="gold">DISHA</span></h1>
+    <div class="subtitle">DSEH001 Digital HR &amp; People Analytics Simulation &middot; M.Com PGCF 2025 &middot; Department of Commerce, University of Delhi</div>
+  </div>
+</div>
+
+<div class="container" style="max-width:580px; margin-top:3rem;">
+  <div id="alert-container"></div>
+  <div class="card">
+    <div class="card-title">Login</div>
+    <div class="alert alert-info">
+      <strong>Welcome to Project Disha.</strong> You and your team are the <em>Digital HR Transformation Office (DHTO)</em> at GreenLeaf Retail &mdash; a 1,000-employee omnichannel retailer. Over six rounds you will design and execute a digital HR transformation, navigating technology choices, algorithmic fairness, change management, and the future of work.
+    </div>
+    <p style="margin-bottom:1.25rem; color:var(--text-muted);">Each team member logs in individually with their own passcode. The person who submits a round is recorded as the scribe for that submission.</p>
+    <div style="margin-bottom:1rem;">
+      <label for="team-code-input">Team Code</label>
+      <input type="text" id="team-code-input" placeholder="e.g. T1, T2 ..." autocomplete="off" maxlength="6">
+    </div>
+    <div style="margin-bottom:1rem;">
+      <label for="member-name-input">Your Full Name</label>
+      <input type="text" id="member-name-input" placeholder="As registered with your instructor" autocomplete="name">
+    </div>
+    <div style="margin-bottom:1.5rem;">
+      <label for="member-passcode-input">Your Personal Passcode</label>
+      <input type="password" id="member-passcode-input" placeholder="Your individual passcode" autocomplete="off">
+    </div>
+    <button class="btn btn-primary btn-large" style="width:100%;" onclick="handleLogin()">Enter Simulation</button>
+  </div>
+  <div style="text-align:center; color:var(--text-muted); font-size:0.85rem; margin-top:1.5rem;">
+    Forgot your passcode? Contact Prof. R K Singh<br>
+    <em>For private circulation &mdash; DSEH001 students only</em>
+  </div>
+</div>
+
+<div id="loading-overlay" class="loading-overlay">
+  <div class="loading-box">
+    <div class="spinner"></div>
+    <div>Verifying credentials...</div>
+  </div>
+</div>
+
+<div class="footer">Project Disha &middot; DSEH001 Digital HR &amp; People Analytics &middot; Prof. R K Singh &middot; For private circulation</div>
+
+<script src="simulation.js"></script>
+<script>
+  initSimulation();
+  document.getElementById('team-code-input').addEventListener('keydown', function(e) { if (e.key==='Enter') document.getElementById('member-name-input').focus(); });
+  document.getElementById('member-name-input').addEventListener('keydown', function(e) { if (e.key==='Enter') document.getElementById('member-passcode-input').focus(); });
+  document.getElementById('member-passcode-input').addEventListener('keydown', function(e) { if (e.key==='Enter') handleLogin(); });
+</script>
+</body>
+</html>
