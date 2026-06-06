@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Instructor Admin — Project Disha</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="header" style="background:linear-gradient(135deg,var(--dark-bg-2) 0%,var(--dark-bg) 100%);">
+  <div class="header-inner">
+    <h1>INSTRUCTOR <span class="gold">ADMIN PANEL</span></h1>
+    <div class="subtitle">DSEH001 Project Disha &middot; Round, Shock &amp; Score Control &middot; Prof. R K Singh</div>
+  </div>
+</div>
+
+<div class="container">
+  <div id="alert-container"></div>
+
+  <!-- Auth -->
+  <div class="card" id="auth-card">
+    <div class="card-title">Instructor Authentication</div>
+    <p style="margin-bottom:1rem; color:var(--text-muted);">Enter admin passcode to access controls.</p>
+    <input type="password" id="admin-passcode" placeholder="Admin passcode">
+    <button class="btn btn-primary" style="margin-top:1rem;" onclick="authenticate()">Authenticate</button>
+  </div>
+
+  <div id="admin-content" style="display:none;">
+
+    <!-- Round Control -->
+    <div class="card">
+      <div class="card-title">Round Control</div>
+      <p style="margin-bottom:1rem; color:var(--text-muted);">Open or close each round. When OPEN, teams can submit. Config tab is authoritative.</p>
+      <div id="round-controls"></div>
+    </div>
+
+    <!-- Shock Event Control -->
+    <div class="card">
+      <div class="card-title">Shock Event Control</div>
+      <p style="margin-bottom:1rem; color:var(--text-muted);">
+        Trigger mid-round. Release <strong>Shock 1 (DPDP breach)</strong> mid-Week 6 during Round 3.
+        Release <strong>Shock 2 (gig grievance)</strong> mid-Week 10 during Round 5.
+        Once triggered, cannot be untriggered. Announce in class simultaneously.
+      </p>
+      <div id="shock-controls"></div>
+    </div>
+
+    <!-- All Submissions -->
+    <div class="card">
+      <div class="card-title">All Round Submissions</div>
+      <button class="btn btn-secondary" onclick="loadAllSubmissions()">Refresh</button>
+      <div id="submissions-content" style="margin-top:1rem;"></div>
+    </div>
+
+    <!-- Leaderboard -->
+    <div class="card">
+      <div class="card-title">Disha Index Leaderboard</div>
+      <button class="btn btn-secondary" onclick="loadLeaderboard()">Refresh Leaderboard</button>
+      <div id="leaderboard-content" style="margin-top:1rem;"></div>
+    </div>
+
+    <!-- Reset (testing only) -->
+    <div class="card" style="border-left-color:var(--danger);">
+      <div class="card-title" style="color:var(--danger);">Reset Team (Testing Only)</div>
+      <p style="color:var(--text-muted); font-size:0.9rem; margin-bottom:1rem;">
+        Equivalent to <code>resetTeamForTesting('Tx')</code> in Apps Script console. Clears all Submissions rows and resets TeamBalances for the specified team. Use only during pre-semester testing &mdash; never on live data.
+      </p>
+      <div style="display:flex; gap:1rem; align-items:center; flex-wrap:wrap;">
+        <input type="text" id="reset-team-code" placeholder="Team code e.g. T1" style="max-width:200px;">
+        <button class="btn btn-danger" onclick="resetTeam()">Reset Team</button>
+      </div>
+    </div>
+
+    <!-- Export -->
+    <div class="card">
+      <div class="card-title">Export &amp; Master Sheet</div>
+      <a href="https://docs.google.com/spreadsheets/d/1YWMU8ME2wrrTa5bBVjOsgia0nuqwFTr0XVV_pUsUxFo/edit" target="_blank" class="btn btn-secondary">Open Master Google Sheet</a>
+    </div>
+
+  </div>
+</div>
+
+<div id="loading-overlay" class="loading-overlay">
+  <div class="loading-box"><div class="spinner"></div><div>Working...</div></div>
+</div>
+<div class="footer">Project Disha &middot; DSEH001 &middot; Prof. R K Singh &middot; INSTRUCTOR ONLY</div>
+
+<script src="simulation.js"></script>
+<script>
+  var adminPasscode = '';
+  state.team = state.team || { teamCode: 'ADMIN' };
+  initSimulation();
+
+  async function authenticate() {
+    adminPasscode = document.getElementById('admin-passcode').value;
+    if (!adminPasscode) { showAlert('error', 'Enter the admin passcode.'); return; }
+    try {
+      var data = await apiCall('verifyAdmin', { passcode: adminPasscode });
+      if (data.authenticated) {
+        document.getElementById('auth-card').style.display = 'none';
+        document.getElementById('admin-content').style.display = 'block';
+        loadRoundControls();
+        loadShockControls();
+        loadAllSubmissions();
+      } else {
+        showAlert('error', 'Invalid passcode.');
+      }
+    } catch (err) {}
+  }
+
+  async function loadRoundControls() {
+    try {
+      var data = await apiCall('getRoundState');
+      var container = document.getElementById('round-controls');
+      var titles = ['The Diagnosis','The Architecture (D1 due)','The Rollout (Shock 1)','The Audit (Signature)','The Story (Shock 2)','The Future (D2 due)'];
+      var html = '<table><thead><tr><th>Round</th><th>Title</th><th>Status</th><th>Action</th></tr></thead><tbody>';
+      for (var r = 1; r <= 6; r++) {
+        var status = data['r'+r] || 'LOCKED';
+        var isOpen = status === 'OPEN';
+        html += '<tr><td><strong>R'+r+'</strong></td><td>'+titles[r-1]+'</td>' +
+          '<td><span style="background:'+(isOpen?'var(--success)':'var(--text-muted)')+';color:white;padding:0.2rem 0.6rem;border-radius:4px;">'+status+'</span></td>' +
+          '<td><button class="btn '+(isOpen?'btn-secondary':'btn-primary')+'" onclick="toggleRound('+r+','+(isOpen?'\'LOCKED\'':'\'OPEN\'')+')">'+(isOpen?'Lock Round':'Open Round')+'</button></td></tr>';
+      }
+      html += '</tbody></table>';
+      container.innerHTML = html;
+    } catch (err) {}
+  }
+
+  async function loadShockControls() {
+    try {
+      var data = await apiCall('getConfig', { passcode: adminPasscode });
+      var s1 = data.ShockEvent1_Triggered === 'Y';
+      var s2 = data.ShockEvent2_Triggered === 'Y';
+      var html = '<table><thead><tr><th>Shock</th><th>Description</th><th>Status</th><th>Action</th></tr></thead><tbody>' +
+        '<tr><td><strong>Shock 1</strong></td><td>DPDP Data Breach (trigger mid-Round 3)</td>' +
+        '<td><span style="background:'+(s1?'var(--danger)':'var(--text-muted)')+';color:white;padding:0.2rem 0.6rem;border-radius:4px;">'+(s1?'TRIGGERED':'PENDING')+'</span></td>' +
+        '<td>'+(s1?'<em>Already triggered</em>':'<button class="btn btn-danger" onclick="triggerShock(1)">Trigger Shock 1</button>')+'</td></tr>' +
+        '<tr><td><strong>Shock 2</strong></td><td>Viral Gig Grievance (trigger mid-Round 5)</td>' +
+        '<td><span style="background:'+(s2?'var(--danger)':'var(--text-muted)')+';color:white;padding:0.2rem 0.6rem;border-radius:4px;">'+(s2?'TRIGGERED':'PENDING')+'</span></td>' +
+        '<td>'+(s2?'<em>Already triggered</em>':'<button class="btn btn-danger" onclick="triggerShock(2)">Trigger Shock 2</button>')+'</td></tr>' +
+        '</tbody></table>';
+      document.getElementById('shock-controls').innerHTML = html;
+    } catch (err) {}
+  }
+
+  async function triggerShock(n) {
+    if (!confirm('Trigger Shock Event '+n+'? This cannot be reversed. Announce in class at the same time.')) return;
+    try {
+      var fd = new FormData();
+      fd.append('action','triggerShock'); fd.append('passcode',adminPasscode); fd.append('shockNumber',n);
+      showLoading(true);
+      var res = await fetch(SIM_CONFIG.apiUrl, { method:'POST', body:fd });
+      var data = await res.json(); showLoading(false);
+      if (!data.success) throw new Error(data.error);
+      showAlert('success','Shock Event '+n+' triggered. The section is now visible on the round page for all teams.');
+      loadShockControls();
+    } catch (err) { showAlert('error', err.message); showLoading(false); }
+  }
+
+  async function toggleRound(r, newState) {
+    try {
+      var fd = new FormData();
+      fd.append('action','setRoundState'); fd.append('passcode',adminPasscode); fd.append('roundNumber',r); fd.append('newState',newState);
+      showLoading(true);
+      var res = await fetch(SIM_CONFIG.apiUrl, { method:'POST', body:fd });
+      var data = await res.json(); showLoading(false);
+      if (!data.success) throw new Error(data.error);
+      showAlert('success','Round '+r+' is now '+newState+'.');
+      loadRoundControls();
+    } catch (err) { showAlert('error', err.message); showLoading(false); }
+  }
+
+  async function loadAllSubmissions() {
+    try {
+      var data = await apiCall('getAllSubmissions', { passcode: adminPasscode });
+      var container = document.getElementById('submissions-content');
+      if (!data.submissions || data.submissions.length === 0) {
+        container.innerHTML = '<p style="color:var(--text-muted);">No submissions yet.</p>'; return;
+      }
+      var html = '<table><thead><tr><th>Team</th><th>Round</th><th>Option</th><th>Submitted</th><th>Scribe</th></tr></thead><tbody>';
+      data.submissions.forEach(function(s) {
+        html += '<tr><td><strong>'+s.teamName+'</strong></td><td>R'+s.roundNumber+'</td><td>'+s.optionChosen+'</td><td style="font-size:0.85rem;">'+new Date(s.submittedAt).toLocaleString()+'</td><td>'+s.scribeName+'</td></tr>';
+      });
+      html += '</tbody></table>';
+      container.innerHTML = html;
+    } catch (err) {}
+  }
+
+  async function loadLeaderboard() {
+    try {
+      var data = await apiCall('getLeaderboard', { passcode: adminPasscode });
+      var container = document.getElementById('leaderboard-content');
+      if (!data.leaderboard || data.leaderboard.length === 0) {
+        container.innerHTML = '<p style="color:var(--text-muted);">No scores yet.</p>'; return;
+      }
+      var html = '<table><thead><tr><th>Rank</th><th>Team</th><th>Analytical Rigour</th><th>Financial Discipline</th><th>Equity & Compliance</th><th>Adoption & Change</th><th>Strategic Coherence</th><th>Disha Index</th></tr></thead><tbody>';
+      data.leaderboard.forEach(function(row, i) {
+        html += '<tr><td>'+(i+1)+'</td><td><strong>'+row.teamName+'</strong></td><td>'+row.analyticalRigour+'</td><td>'+row.financialDiscipline+'</td><td>'+row.equityCompliance+'</td><td>'+row.adoptionChange+'</td><td>'+row.strategicCoherence+'</td><td><strong>'+row.dishaIndex+'</strong></td></tr>';
+      });
+      html += '</tbody></table>';
+      container.innerHTML = html;
+    } catch (err) {}
+  }
+
+  async function resetTeam() {
+    var code = (document.getElementById('reset-team-code').value || '').trim().toUpperCase();
+    if (!code) { showAlert('error','Enter a team code.'); return; }
+    if (!confirm('PERMANENTLY reset all submissions and balances for '+code+'? Only use during testing.')) return;
+    try {
+      var fd = new FormData();
+      fd.append('action','resetTeamForTesting'); fd.append('passcode',adminPasscode); fd.append('teamCode',code);
+      showLoading(true);
+      var res = await fetch(SIM_CONFIG.apiUrl, { method:'POST', body:fd });
+      var data = await res.json(); showLoading(false);
+      if (!data.success) throw new Error(data.error);
+      showAlert('success',code+' has been reset.');
+    } catch (err) { showAlert('error', err.message); showLoading(false); }
+  }
+</script>
+</body>
+</html>
