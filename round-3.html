@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Round 3: The Rollout — Project Disha</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="header">
+  <div class="header-inner" style="display:flex;justify-content:space-between;align-items:center;">
+    <div>
+      <h1>ROUND 3: <span class="gold">THE ROLLOUT</span></h1>
+      <div class="subtitle">Week 6 &middot; Unit II&ndash;III: Change Management, Digital Learning &middot; Shock Event 1 mid-round &middot; Team: <strong id="team-name-display"></strong></div>
+    </div>
+    <a href="home.html" class="btn btn-secondary" style="background:rgba(255,255,255,0.1);color:white;border-color:rgba(255,255,255,0.3);">&#8592; Home</a>
+  </div>
+</div>
+<div class="container">
+  <div id="alert-container"></div>
+  <div class="card"><div class="card-title">Current Resources</div><div id="resource-tiles" class="resource-grid"></div></div>
+
+  <!-- Shock Event 1 — hidden until triggered -->
+  <div class="shock-section" id="shock-section-1">
+    <div class="shock-title">&#9889; SHOCK EVENT 1 — DPDP DATA INCIDENT</div>
+    <div id="shock-text" style="margin-bottom:1rem; font-size:0.95rem; line-height:1.7;"></div>
+    <label for="shock-response">Your Breach Response (mandatory before submitting this round):</label>
+    <textarea id="shock-response" placeholder="Address all four points in the incident description..." oninput="validateSubmitButton()"></textarea>
+  </div>
+
+  <div class="card">
+    <div class="card-title">&#128202; Section 1 &mdash; Guided Dataset Analysis</div>
+    <div class="alert alert-info">Open <strong>Employee_Master</strong> tab and complete the following.</div>
+    <ol id="data-brief-list" style="margin:1rem 0 0 1.5rem;line-height:2;"></ol>
+  </div>
+
+  <div class="card">
+    <div class="card-title">&#9654; Section 2 &mdash; Choose ONE Rollout Strategy</div>
+    <div id="options-list"></div>
+  </div>
+  <div class="cost-calculator" id="cost-calculator"><div class="cost-row"><em>Select an option to see resource impact</em></div></div>
+
+  <div class="card">
+    <div class="card-title">&#9997; Section 3 &mdash; Evidence Rationale (minimum 200 words)</div>
+    <div class="alert alert-info" style="font-size:0.9rem;">Address: (1) Why this rollout strategy given the Training_Completion_Rate and Digital_Literacy_Score data? Cite figures. (2) How does it address Tier-3 equity? (3) How does it connect to your R2 architecture? (4) If Shock 1 was triggered, how does your breach response affect your rollout choice? (5) Resource trade-off.</div>
+    <textarea id="rationale" placeholder="Write your evidence rationale..." oninput="validateSubmitButton()"></textarea>
+    <div id="word-count" class="word-count">0 words (minimum 200)</div>
+  </div>
+
+  <div class="card" style="text-align:center;">
+    <p style="color:var(--text-muted);font-size:0.9rem;margin-bottom:1rem;">One submission per team &mdash; cannot be undone.</p>
+    <button class="btn btn-primary btn-large" id="submit-btn" disabled onclick="submitRound(3)">Submit Round 3 Decision</button>
+  </div>
+</div>
+<div id="loading-overlay" class="loading-overlay"><div class="loading-box"><div class="spinner"></div><div>Loading...</div></div></div>
+<div class="footer">Project Disha &middot; DSEH001 &middot; Prof. R K Singh &middot; For private circulation</div>
+<script src="simulation.js"></script><script src="round-3-data.js"></script>
+<script>
+  initSimulation();
+  document.getElementById('shock-text').textContent = SHOCK_1_TEXT;
+  document.getElementById('data-brief-list').innerHTML = ROUND_3_DATA_BRIEF.map(function(q){return '<li>'+q+'</li>';}).join('');
+  document.getElementById('options-list').innerHTML = ROUND_3_OPTIONS.map(function(opt){
+    var sign=opt.changeDelta>=0?'+':'';
+    return '<div class="option-card" data-code="'+opt.code+'" onclick="selectOption(\''+opt.code+'\',ROUND_3_OPTIONS)">' +
+      '<div class="option-header"><span class="option-code">'+opt.code+'</span><span class="option-name">'+opt.name+'</span></div>' +
+      '<div class="option-desc">'+opt.description+'</div>' +
+      '<div class="option-cost"><span class="cost-tag">&#8377;'+opt.budgetCost+'L</span><span class="cost-tag">&#9200; '+opt.analystCost+' hrs</span>' +
+      '<span class="cost-tag" style="background:'+(opt.changeDelta>=0?'#E8F5E9':'#FEECEC')+';color:'+(opt.changeDelta>=0?'var(--success)':'var(--danger)')+';">CC '+sign+opt.changeDelta+'</span></div></div>';
+  }).join('');
+  async function loadRound(){try{await fetchTeamBalance();var rs=await fetchRoundState();if(rs&&rs.r3!=='OPEN'){showAlert('warning','Round 3 is not yet open.');document.getElementById('submit-btn').disabled=true;}if(rs&&rs.submitted_r3){showAlert('info','Already submitted.');document.getElementById('submit-btn').disabled=true;document.getElementById('submit-btn').textContent='Already Submitted';}await checkShockEvents();}catch(e){}}
+  loadRound();
+</script>
+<nav class="round-nav"><a id="navPrev" class="round-nav-btn round-nav-prev" href="#">&larr; Previous</a><a class="round-nav-btn round-nav-home" href="home.html">Home</a><a id="navNext" class="round-nav-btn round-nav-next" href="#">Next &rarr;</a></nav>
+<script>(function(){var m=(location.pathname.match(/round-(\d+)\.html/)||[])[1];var n=m?parseInt(m,10):null;var prev=document.getElementById('navPrev'),next=document.getElementById('navNext');if(n===null)return;if(n<=1){prev.classList.add('is-disabled');prev.removeAttribute('href');}else{prev.href='round-'+(n-1)+'.html';}if(n>=6){next.classList.add('is-disabled');next.removeAttribute('href');}else{next.href='round-'+(n+1)+'.html';}})();</script>
+</body>
+</html>
