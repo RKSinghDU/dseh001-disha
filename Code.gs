@@ -4,15 +4,16 @@
  *  DSEH001 Digital HR & People Analytics Simulation
  *  Course Coordinator: Prof. R. K. Singh, University of Delhi
  *
- *  v1.1 — Three bug fixes for testing phase:
- *    FIX 1 (Auth): verifyMember now accepts BOTH 'passcode' (login page)
- *                  AND 'memberPasscode' (round pages via apiCall GET/POST).
- *                  requireMemberAuth also checks both param names.
- *    FIX 2 (Config): getConfigAll no longer requires admin auth — students
- *                    call this via checkShockEvents(). Admin-only gate removed.
- *    FIX 3 (Submit): submitRound errors are now surfaced to the student
- *                    via the response rather than silently swallowed.
+ *  v1.2 — Three issues fixed:
+ *    FIX A (Leaderboard): getLeaderboard() was overwriting byTeam[tid] on
+ *           every row — so only the last round's scores survived. Now
+ *           ACCUMULATES all rounds per team correctly.
+ *    FIX B (Scoring tab): recordScores() already appends one row per round
+ *           (correct — no overwrite). Confirmed no change needed there.
+ *    FIX C (Round state cache): cache TTL reduced to 60s so admin panel
+ *           open/lock changes are visible to students within 1 minute.
  *
+ *  v1.1 — Auth param unification, getConfigAll public, error surfacing.
  *  v1.0 — Initial build.
  * =============================================================================
  */
@@ -33,7 +34,7 @@ const CC_WARNING  = 30;
 const CC_DANGER   = 10;
 const ANALYST_MIN = 20;
 
-const CACHE_TTL_STATE  = 300;
+const CACHE_TTL_STATE  = 60;    // FIX C: reduced to 60s so round open/lock is fast
 const CACHE_TTL_CONFIG = 3600;
 const CK_ROUND_STATE   = 'disha:roundState';
 const CK_CONFIG_PFX    = 'disha:config:';
@@ -137,7 +138,7 @@ function handleRequest(params) {
       case 'verifyAdmin':         result = verifyAdmin(ctx);               break;
       case 'getTeamBalance':      result = getTeamBalance(ctx);            break;
       case 'getRoundState':       result = getRoundState(ctx);             break;
-      case 'getConfig':           result = getConfigAll(ctx);              break;  // FIX 2: no admin gate
+      case 'getConfig':           result = getConfigAll(ctx);              break;
       case 'getLeaderboard':      result = getLeaderboard(ctx);            break;
       case 'getAllSubmissions':    result = getAllSubmissions(ctx);         break;
       case 'submitRound':         result = submitRound(ctx);               break;
@@ -174,7 +175,7 @@ function getSheet(ctx, name) {
 
 function getDataRows(ctx, name) {
   if (ctx.rows[name]) return ctx.rows[name];
-  var sh = getSheet(ctx, name);
+  var sh  = getSheet(ctx, name);
   var all = sh.getDataRange().getValues();
   var rows = all.length > 1 ? all.slice(1) : [];
   ctx.rows[name] = { rows: rows, sheet: sh, startRow: 2 };
@@ -189,7 +190,7 @@ function invalidate(ctx, name) { delete ctx.rows[name]; }
 
 function getConfigValue(ctx, key) {
   var cKey = CK_CONFIG_PFX + key;
-  var hit = ctx.cache.get(cKey);
+  var hit  = ctx.cache.get(cKey);
   if (hit !== null) return hit === '__null__' ? null : hit;
   var d = getDataRows(ctx, 'Config');
   var val = null;
@@ -219,17 +220,14 @@ function setConfigValue(ctx, key, value) {
   ctx.cache.remove(CK_CONFIG_PFX + key);
 }
 
-/**
- * FIX 2: getConfigAll does NOT require admin.
- * Students call this via checkShockEvents() to check shock trigger flags.
- * Sensitive keys (AdminPasscode) are stripped before returning.
- */
+// Public — students call this to check shock trigger flags.
+// AdminPasscode is stripped before returning.
 function getConfigAll(ctx) {
   var d = getDataRows(ctx, 'Config');
   var out = {};
   for (var i = 0; i < d.rows.length; i++) {
     var k = String(d.rows[i][COL.Config.Key]);
-    if (k === 'AdminPasscode') continue;   // never expose to students
+    if (k === 'AdminPasscode') continue;
     out[k] = String(d.rows[i][COL.Config.Value]);
   }
   return out;
@@ -248,17 +246,9 @@ function findTeam(ctx, teamId) {
   return null;
 }
 
-/**
- * FIX 1 (Part A): verifyMember accepts BOTH passcode param names.
- *
- * The login page (handleLogin) sends: apiCall('verifyMember', { passcode: ... })
- * Round pages send via apiCall:       memberPasscode in SIM_CONFIG params
- *
- * We accept whichever is present: memberPasscode takes priority, then passcode.
- */
+// Accepts both 'memberPasscode' (round pages) and 'passcode' (login page).
 function verifyMember(ctx) {
   var memberName = String(ctx.params.memberName || '').trim();
-  // FIX: accept both param names
   var passcode   = String(ctx.params.memberPasscode || ctx.params.passcode || '').trim();
   var teamCode   = String(ctx.params.teamCode || '').toUpperCase();
   if (!memberName || !passcode) return { authenticated: false };
@@ -268,11 +258,9 @@ function verifyMember(ctx) {
     var rowTeam = String(d.rows[i][COL.TeamMembers.TeamID]).toUpperCase();
     var rowName = String(d.rows[i][COL.TeamMembers.MemberName]).trim();
     var rowPass = String(d.rows[i][COL.TeamMembers.Passcode]).trim();
-
     if (rowName.toLowerCase() !== memberName.toLowerCase()) continue;
     if (teamCode && rowTeam !== teamCode) continue;
     if (!rowPass || rowPass !== passcode) return { authenticated: false };
-
     var team = findTeam(ctx, rowTeam);
     return {
       authenticated: true,
@@ -284,21 +272,14 @@ function verifyMember(ctx) {
   return { authenticated: false };
 }
 
-/**
- * FIX 1 (Part B): requireMemberAuth accepts both passcode param names,
- * and passes through correctly to verifyMember.
- */
 function requireMemberAuth(ctx) {
   if (ctx._auth) return ctx._auth;
   var memberName = String(ctx.params.memberName || '').trim();
-  // Accept either param name — round pages use memberPasscode
   var passcode   = String(ctx.params.memberPasscode || ctx.params.passcode || '').trim();
   var teamCode   = String(ctx.params.teamCode || '').toUpperCase();
-
   if (!memberName || !passcode || !teamCode) {
     throw new Error('Authentication required. Please log in again.');
   }
-  // verifyMember will pick up the correct param via ctx.params
   var result = verifyMember(ctx);
   if (!result.authenticated) {
     throw new Error('Authentication failed. Please log in again.');
@@ -367,8 +348,8 @@ function getTeamBalance(ctx) {
     };
   }
 
-  var teamState  = findState(ctx, teamCode);
-  var debtLedger = teamState ? String(teamState.data[COL.TeamState.Debt_Ledger] || '[]') : '[]';
+  var teamState   = findState(ctx, teamCode);
+  var debtLedger  = teamState ? String(teamState.data[COL.TeamState.Debt_Ledger] || '[]') : '[]';
   var submissions = getTeamSubmissions(ctx, teamCode);
 
   return {
@@ -505,15 +486,9 @@ function submitRound(ctx) {
     curAH     = Number(bal.data[COL.TeamBalances.Analyst_Hours_Remaining]) || 0;
   }
 
-  if (budgetCost > curBudget) {
-    throw new Error('Option ' + optionChosen + ' costs \u20B9' + budgetCost + 'L but only \u20B9' + curBudget + 'L remains.');
-  }
-  if (analystCost > curAH) {
-    throw new Error('Option ' + optionChosen + ' needs ' + analystCost + ' Analyst Hours but only ' + curAH + ' remain.');
-  }
-  if (curCC + changeDelta < 0) {
-    throw new Error('Option ' + optionChosen + ' would take Change Capital below 0.');
-  }
+  if (budgetCost  > curBudget) throw new Error('Option ' + optionChosen + ' costs \u20B9' + budgetCost + 'L but only \u20B9' + curBudget + 'L remains.');
+  if (analystCost > curAH)     throw new Error('Option ' + optionChosen + ' needs ' + analystCost + ' Analyst Hours but only ' + curAH + ' remain.');
+  if (curCC + changeDelta < 0) throw new Error('Option ' + optionChosen + ' would take Change Capital below 0.');
 
   var newBudget = curBudget - budgetCost;
   var newCC     = Math.max(0, Math.min(100, curCC + changeDelta));
@@ -523,7 +498,6 @@ function submitRound(ctx) {
     ? 'Only ' + analystCost + ' Analyst Hours used (minimum recommended: ' + ANALYST_MIN + '). Analytical Rigour score may be reduced.'
     : null;
 
-  // Write Submissions
   var rationaleStored = rationale;
   if (auditData)     rationaleStored += '\n\n--- FAIRNESS_AUDIT ---\n' + JSON.stringify(auditData);
   if (shockResponse) rationaleStored += '\n\n--- SHOCK_RESPONSE ---\n' + JSON.stringify(shockResponse);
@@ -533,7 +507,6 @@ function submitRound(ctx) {
                    rationaleStored, budgetCost, changeDelta, analystCost]);
   invalidate(ctx, 'Submissions');
 
-  // Update TeamBalances
   if (!bal) {
     var balSh = getSheet(ctx, 'TeamBalances');
     balSh.appendRow([teamCode, newBudget, newCC, newAH, roundNumber]);
@@ -544,7 +517,6 @@ function submitRound(ctx) {
     invalidate(ctx, 'TeamBalances');
   }
 
-  // Scores & Debt Ledger
   var scores = computeAutoScores(roundNumber, optionChosen, analystCost, newBudget, newCC);
   recordScores(ctx, teamCode, roundNumber, scores);
   updateDebtLedger(ctx, teamCode, roundNumber, optionChosen, newCC, newBudget);
@@ -582,7 +554,7 @@ function computeAutoScores(roundNumber, optionChosen, analystCost, newBudget, ne
   var equityMap = { '4B':3, '4C':3, '4D':3, '4E':2, '4A':1, '6A':3, '6D':2 };
   if (equityMap[optionChosen] !== undefined) equity = equityMap[optionChosen];
 
-  var cd = (( ROUND_COSTS[roundNumber] || {} )[optionChosen] || {}).changeDelta || 0;
+  var cd = ((ROUND_COSTS[roundNumber] || {})[optionChosen] || {}).changeDelta || 0;
   var adoption;
   if      (cd >= 10) adoption = 4;
   else if (cd >=  5) adoption = 3;
@@ -590,8 +562,7 @@ function computeAutoScores(roundNumber, optionChosen, analystCost, newBudget, ne
   else if (cd >= -5) adoption = 1;
   else               adoption = 0;
 
-  var coherence = 2;  // instructor override in Scoring tab
-
+  var coherence = 2;
   var total = rigour + finDisc + equity + adoption + coherence;
   return {
     Analytical_Rigour: rigour, Financial_Discipline: finDisc,
@@ -600,9 +571,16 @@ function computeAutoScores(roundNumber, optionChosen, analystCost, newBudget, ne
   };
 }
 
+/**
+ * recordScores: appends ONE row per round per team to the Scoring tab.
+ * Each round gets its own row — nothing is overwritten.
+ * The Cumulative_Disha_Index column is the running total across all rounds.
+ */
 function recordScores(ctx, teamCode, roundNumber, scores) {
   var sh  = getSheet(ctx, 'Scoring');
   var all = sh.getDataRange().getValues();
+
+  // Sum all previous rounds for this team (skip current round if it somehow exists)
   var cumulative = 0;
   for (var i = 1; i < all.length; i++) {
     if (String(all[i][COL.Scoring.TeamID]).toUpperCase() === teamCode &&
@@ -611,10 +589,18 @@ function recordScores(ctx, teamCode, roundNumber, scores) {
     }
   }
   cumulative += scores.Round_Total;
-  sh.appendRow([teamCode, roundNumber,
-    scores.Analytical_Rigour, scores.Financial_Discipline,
-    scores.Equity_Compliance, scores.Adoption_Change,
-    scores.Strategic_Coherence, scores.Round_Total, cumulative]);
+
+  sh.appendRow([
+    teamCode,
+    roundNumber,
+    scores.Analytical_Rigour,
+    scores.Financial_Discipline,
+    scores.Equity_Compliance,
+    scores.Adoption_Change,
+    scores.Strategic_Coherence,
+    scores.Round_Total,
+    cumulative,
+  ]);
 }
 
 // =============================================================================
@@ -678,37 +664,79 @@ function resetAnalystHoursForAllTeams(ctx) {
 // SECTION 15 — LEADERBOARD & SUBMISSIONS (admin)
 // =============================================================================
 
+/**
+ * FIX A: getLeaderboard now correctly ACCUMULATES all rounds per team.
+ *
+ * Previous bug: byTeam[tid] was overwritten on every Scoring row, so only
+ * the last round's individual axis scores were returned (though dishaIndex
+ * was correct because it reads Cumulative_Disha_Index from the last row).
+ *
+ * Fix: collect all rows per team into an array, then sum the axis scores
+ * across rounds. Also returns a per-round breakdown for the admin panel.
+ */
 function getLeaderboard(ctx) {
   requireAdmin(ctx);
   var sh  = getSheet(ctx, 'Scoring');
   var all = sh.getDataRange().getValues();
   if (all.length < 2) return { leaderboard: [] };
 
-  var byTeam = {};
+  // Collect all rows per team
+  var teamRows = {};
   for (var i = 1; i < all.length; i++) {
     var tid = String(all[i][COL.Scoring.TeamID]).toUpperCase();
     if (!tid) continue;
-    byTeam[tid] = {
-      teamID: tid,
-      analyticalRigour:    Number(all[i][COL.Scoring.Analytical_Rigour])   || 0,
-      financialDiscipline: Number(all[i][COL.Scoring.Financial_Discipline]) || 0,
-      equityCompliance:    Number(all[i][COL.Scoring.Equity_Compliance])    || 0,
-      adoptionChange:      Number(all[i][COL.Scoring.Adoption_Change])      || 0,
-      strategicCoherence:  Number(all[i][COL.Scoring.Strategic_Coherence])  || 0,
-      dishaIndex:          Number(all[i][COL.Scoring.Cumulative_Disha_Index]) || 0,
-    };
+    if (!teamRows[tid]) teamRows[tid] = [];
+    teamRows[tid].push({
+      round:               Number(all[i][COL.Scoring.Round]),
+      analyticalRigour:    Number(all[i][COL.Scoring.Analytical_Rigour])    || 0,
+      financialDiscipline: Number(all[i][COL.Scoring.Financial_Discipline])  || 0,
+      equityCompliance:    Number(all[i][COL.Scoring.Equity_Compliance])     || 0,
+      adoptionChange:      Number(all[i][COL.Scoring.Adoption_Change])       || 0,
+      strategicCoherence:  Number(all[i][COL.Scoring.Strategic_Coherence])   || 0,
+      roundTotal:          Number(all[i][COL.Scoring.Round_Total])            || 0,
+      cumulative:          Number(all[i][COL.Scoring.Cumulative_Disha_Index]) || 0,
+    });
   }
 
+  // Get team names
   var teams   = getDataRows(ctx, 'Teams').rows;
   var nameMap = {};
   for (var t = 0; t < teams.length; t++) {
     nameMap[String(teams[t][COL.Teams.TeamID]).toUpperCase()] = String(teams[t][COL.Teams.TeamName]);
   }
 
-  var lb = Object.values(byTeam).map(function(row) {
-    row.teamName = nameMap[row.teamID] || row.teamID;
-    return row;
+  var lb = Object.keys(teamRows).map(function(tid) {
+    var rows = teamRows[tid];
+
+    // Sum axis scores across all rounds
+    var totAR = 0, totFD = 0, totEC = 0, totAC = 0, totSC = 0, totRT = 0;
+    rows.forEach(function(r) {
+      totAR += r.analyticalRigour;
+      totFD += r.financialDiscipline;
+      totEC += r.equityCompliance;
+      totAC += r.adoptionChange;
+      totSC += r.strategicCoherence;
+      totRT += r.roundTotal;
+    });
+
+    // Disha Index = cumulative from the most recent row (already correct in sheet)
+    var latestRow = rows.reduce(function(a, b) { return b.round > a.round ? b : a; }, rows[0]);
+
+    return {
+      teamID:              tid,
+      teamName:            nameMap[tid] || tid,
+      analyticalRigour:    totAR,
+      financialDiscipline: totFD,
+      equityCompliance:    totEC,
+      adoptionChange:      totAC,
+      strategicCoherence:  totSC,
+      roundsPlayed:        rows.length,
+      dishaIndex:          latestRow.cumulative,
+      // Per-round breakdown for admin panel display
+      roundBreakdown:      rows.sort(function(a, b) { return a.round - b.round; }),
+    };
   });
+
   lb.sort(function(a, b) { return b.dishaIndex - a.dishaIndex; });
   return { leaderboard: lb };
 }
@@ -737,13 +765,13 @@ function getAllSubmissions(ctx) {
 
 function testSetup() {
   var ctx = buildCtx({});
-  Logger.log('=== Project Disha Backend v1.1 — Self-Test ===');
+  Logger.log('=== Project Disha Backend v1.2 — Self-Test ===');
   Logger.log('Sheet ID:         ' + SHEET_ID);
   Logger.log('AdminPasscode:    ' + (getConfigValue(ctx, 'AdminPasscode') ? 'SET' : 'NOT SET'));
   Logger.log('CurrentOpenRound: ' + (getConfigValue(ctx, 'CurrentOpenRound') || 'none'));
   Logger.log('Shock1 Triggered: ' + (getConfigValue(ctx, 'ShockEvent1_Triggered') || 'N'));
   Logger.log('Shock2 Triggered: ' + (getConfigValue(ctx, 'ShockEvent2_Triggered') || 'N'));
-  Logger.log('Round state: ' + JSON.stringify(getRoundState(ctx)));
+  Logger.log('Round state: '      + JSON.stringify(getRoundState(ctx)));
   var required = ['Config','Teams','TeamMembers','Submissions','TeamBalances',
                   'TeamMetrics','TeamState','Scoring','D1_Submissions','D2_Submissions','Reflections'];
   required.forEach(function(name) {
@@ -764,7 +792,7 @@ function resetTeamForTestingAction(ctx) {
 function resetTeamForTesting(teamCode) {
   if (!teamCode) { Logger.log('Usage: resetTeamForTesting("T1")'); return; }
   teamCode = String(teamCode).toUpperCase();
-  var ctx = buildCtx({});
+  var ctx  = buildCtx({});
 
   var bal = findBalance(ctx, teamCode);
   if (bal) {
