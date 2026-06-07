@@ -17,37 +17,31 @@
 </div>
 <div class="container">
   <div id="alert-container"></div>
-  <div class="alert alert-info"><strong>&#127881; Final Round.</strong> This is the capstone decision. Your choice here shapes your D2 Board Memo narrative. D2 is due at the close of this round &mdash; submit via Google Classroom. Your Remediation Table in D2 must cite specific before/after figures from the Gig_Workforce and PeopleAnalytics_Fact tabs.</div>
+  <div class="alert alert-info"><strong>&#127881; Final Round.</strong> D2 (Future-of-Work Board Memo) is due at close &mdash; submit via Google Classroom. Your Remediation Table must cite specific before/after figures from Gig_Workforce and PeopleAnalytics_Fact.</div>
   <div class="card"><div class="card-title">Current Resources</div><div id="resource-tiles" class="resource-grid"></div></div>
-
   <div class="card">
     <div class="card-title">&#128202; Section 1 &mdash; Guided Dataset Analysis</div>
-    <div class="alert alert-info">Open <strong>Gig_Workforce</strong> and <strong>PeopleAnalytics_Fact</strong> tabs and complete the following.</div>
+    <div class="alert alert-info">Open <strong>Gig_Workforce</strong> and <strong>PeopleAnalytics_Fact</strong> tabs.</div>
     <ol id="data-brief-list" style="margin:1rem 0 0 1.5rem;line-height:2;"></ol>
   </div>
-
   <div class="card">
     <div class="card-title">&#9654; Section 2 &mdash; Choose ONE Future-of-Work Strategy</div>
     <div id="options-list"></div>
   </div>
   <div class="cost-calculator" id="cost-calculator"><div class="cost-row"><em>Select an option to see resource impact</em></div></div>
-
   <div class="card">
     <div class="card-title">&#9997; Section 3 &mdash; Evidence Rationale (minimum 200 words)</div>
-    <div class="alert alert-info" style="font-size:0.9rem;">Address: (1) What does the Gig_Workforce data show about Bronze-tier earnings, benefits enrolment, and grievance rates? Cite figures including GL-1002. (2) How does your R6 choice resolve the unfinished threads from Rounds 3&ndash;5? (3) How does it connect to your D2 Board Memo's Remediation Table? (4) What is the Code on Social Security 2020 commitment, if applicable? (5) How does the choice close the Debt Ledger items, if any?</div>
+    <div class="alert alert-info" style="font-size:0.9rem;">Address: (1) Gig_Workforce data on Bronze-tier earnings, enrolment, grievances &mdash; cite GL-1002 figures. (2) How does R6 resolve unfinished threads from R3&ndash;R5? (3) How does it connect to your D2 Remediation Table? (4) Code on Social Security 2020 commitment? (5) How does it close Debt Ledger items?</div>
     <textarea id="rationale" placeholder="Write your evidence rationale..." oninput="validateSubmitButton()"></textarea>
     <div id="word-count" class="word-count">0 words (minimum 200)</div>
   </div>
-
-  <!-- Honest Reflection (D2 component) -->
   <div class="card" style="border-left-color:var(--gold);">
     <div class="card-title" style="color:var(--gold);">&#9733; Honest Reflection (for D2 Board Memo)</div>
-    <p style="font-size:0.9rem;color:var(--text-muted);margin-bottom:1rem;">In your D2 Board Memo, your Honest Reflection section must candidly acknowledge what your team got wrong or where outcomes fell short of intent. Use this space to draft that reflection before writing the Memo.</p>
+    <p style="font-size:0.9rem;color:var(--text-muted);margin-bottom:1rem;">Draft your Honest Reflection here before writing the Memo. Candidly acknowledge what your team got wrong or where outcomes fell short.</p>
     <textarea id="honest-reflection" placeholder="What would your team have done differently across the six rounds, and why?"></textarea>
   </div>
-
   <div class="card" style="text-align:center;">
-    <p style="color:var(--text-muted);font-size:0.9rem;margin-bottom:1rem;">One submission per team &mdash; cannot be undone. Remember to submit D2 via Classroom before the deadline.</p>
+    <p style="color:var(--text-muted);font-size:0.9rem;margin-bottom:1rem;">One submission per team &mdash; cannot be undone. Also submit D2 via Classroom before the deadline.</p>
     <button class="btn btn-primary btn-large" id="submit-btn" disabled onclick="submitRound(6)">Submit Round 6 — Final Decision</button>
   </div>
 </div>
@@ -55,20 +49,34 @@
 <div class="footer">Project Disha &middot; DSEH001 &middot; Prof. R K Singh &middot; For private circulation</div>
 <script src="simulation.js"></script><script src="round-6-data.js"></script>
 <script>
+  var ROUND_N = 6;
   initSimulation();
-  document.getElementById('data-brief-list').innerHTML = ROUND_6_DATA_BRIEF.map(function(q){return '<li>'+q+'</li>';}).join('');
+  document.getElementById('data-brief-list').innerHTML = ROUND_6_DATA_BRIEF.map(function(q){ return '<li>'+q+'</li>'; }).join('');
   document.getElementById('options-list').innerHTML = ROUND_6_OPTIONS.map(function(opt){
     var sign=opt.changeDelta>=0?'+':'';
-    return '<div class="option-card" data-code="'+opt.code+'" onclick="selectOption(\''+opt.code+'\',ROUND_6_OPTIONS)">' +
-      '<div class="option-header"><span class="option-code">'+opt.code+'</span><span class="option-name">'+opt.name+'</span></div>' +
-      '<div class="option-desc">'+opt.description+'</div>' +
-      '<div class="option-cost"><span class="cost-tag">&#8377;'+opt.budgetCost+'L</span><span class="cost-tag">&#9200; '+opt.analystCost+' hrs</span>' +
+    return '<div class="option-card" data-code="'+opt.code+'" onclick="selectOption(\''+opt.code+'\',ROUND_6_OPTIONS)">'+
+      '<div class="option-header"><span class="option-code">'+opt.code+'</span><span class="option-name">'+opt.name+'</span></div>'+
+      '<div class="option-desc">'+opt.description+'</div>'+
+      '<div class="option-cost"><span class="cost-tag">&#8377;'+opt.budgetCost+'L</span><span class="cost-tag">&#9200; '+opt.analystCost+' hrs</span>'+
       '<span class="cost-tag" style="background:'+(opt.changeDelta>=0?'#E8F5E9':'#FEECEC')+';color:'+(opt.changeDelta>=0?'var(--success)':'var(--danger)')+';">CC '+sign+opt.changeDelta+'</span></div></div>';
   }).join('');
-  async function loadRound(){try{await fetchTeamBalance();var rs=await fetchRoundState();if(rs&&rs.r6!=='OPEN'){showAlert('warning','Round 6 is not yet open.');document.getElementById('submit-btn').disabled=true;}if(rs&&rs.submitted_r6){showAlert('info','Already submitted.');document.getElementById('submit-btn').disabled=true;document.getElementById('submit-btn').textContent='Already Submitted';}}catch(e){}}
+  async function loadRound(){
+    var btn=document.getElementById('submit-btn');
+    try{
+      var balance=await fetchTeamBalance();
+      var rs=await fetchRoundState();
+      var subs=(balance&&balance.submissions)||{};
+      buildRoundNav(ROUND_N,rs,subs);
+      if(!rs||rs['r'+ROUND_N]!=='OPEN'){lockRoundPage(ROUND_N);return;}
+      if(subs['r'+ROUND_N]){showAlert('info','Already submitted. Read-only.');btn.disabled=true;btn.textContent='Already Submitted';document.querySelectorAll('.option-card').forEach(function(el){el.style.pointerEvents='none';el.style.opacity='0.6';});}
+    }catch(e){console.error('[Disha] loadRound:',e.message);showAlert('error','Could not load round data: '+e.message);btn.disabled=true;}
+  }
   loadRound();
 </script>
-<nav class="round-nav"><a id="navPrev" class="round-nav-btn round-nav-prev" href="#">&larr; Previous</a><a class="round-nav-btn round-nav-home" href="home.html">Home</a><a id="navNext" class="round-nav-btn round-nav-next" href="#">Next &rarr;</a></nav>
-<script>(function(){var m=(location.pathname.match(/round-(\d+)\.html/)||[])[1];var n=m?parseInt(m,10):null;var prev=document.getElementById('navPrev'),next=document.getElementById('navNext');if(n===null)return;if(n<=1){prev.classList.add('is-disabled');prev.removeAttribute('href');}else{prev.href='round-'+(n-1)+'.html';}if(n>=6){next.classList.add('is-disabled');next.removeAttribute('href');}else{next.href='round-'+(n+1)+'.html';}})();</script>
+<nav class="round-nav" aria-label="Round navigation">
+  <a id="navPrev" class="round-nav-btn round-nav-prev" href="#">&larr; Previous</a>
+  <a class="round-nav-btn round-nav-home" href="home.html">Home</a>
+  <a id="navNext" class="round-nav-btn round-nav-next" href="#">Next &rarr;</a>
+</nav>
 </body>
 </html>
