@@ -1,12 +1,8 @@
 // ============================================================
 // DSEH001 Project Disha — Shared Client-Side Logic
-// v1.2 — Four bug fixes:
-//   FIX 1: Clear stale localStorage on load; log exactly what
-//           credentials are being sent so auth failures are visible.
-//   FIX 2: loadRound() errors are surfaced, not swallowed.
-//   FIX 3: submitRound() errors shown to the student.
-//   FIX 4: Round state check uses correct key (submissions.r1
-//           not submitted_r1); getRoundState called without auth.
+// v1.3 — Fix: locked round pages now show a full lock screen
+//         hiding all content; Next/Prev nav respects round state.
+// v1.2 — Auth logging, error surfacing, round-state key fix.
 // ============================================================
 
 // --- CONFIGURATION -------------------------------------------
@@ -48,8 +44,7 @@ function initSimulation() {
     memberPasscode: localStorage.getItem(LS_KEYS.memberPasscode),
   };
 
-  // Debug: log what credentials are loaded (visible in browser console F12)
-  console.log('[Disha] initSimulation — credentials loaded:',
+  console.log('[Disha] initSimulation:',
     'teamCode=' + state.team.teamCode,
     'memberName=' + state.team.memberName,
     'memberPasscode=' + (state.team.memberPasscode ? '***SET***' : 'MISSING'));
@@ -60,7 +55,7 @@ function initSimulation() {
     || path.endsWith('admin.html');
 
   if (!state.team.teamCode && !isPublicPage) {
-    console.warn('[Disha] No teamCode in localStorage — redirecting to login.');
+    console.warn('[Disha] No teamCode — redirecting to login.');
     window.location.href = 'index.html';
     return;
   }
@@ -80,28 +75,23 @@ async function apiCall(action, params, opts) {
   if (!opts.silent) showLoading(true);
   try {
     const url = new URL(SIM_CONFIG.apiUrl);
-    url.searchParams.set('action',         action);
-    url.searchParams.set('teamCode',        state.team && state.team.teamCode       ? state.team.teamCode       : '');
-    url.searchParams.set('memberName',      state.team && state.team.memberName     ? state.team.memberName     : '');
-    url.searchParams.set('memberPasscode',  state.team && state.team.memberPasscode ? state.team.memberPasscode : '');
+    url.searchParams.set('action',        action);
+    url.searchParams.set('teamCode',       state.team && state.team.teamCode       ? state.team.teamCode       : '');
+    url.searchParams.set('memberName',     state.team && state.team.memberName     ? state.team.memberName     : '');
+    url.searchParams.set('memberPasscode', state.team && state.team.memberPasscode ? state.team.memberPasscode : '');
     Object.entries(params).forEach(function([k, v]) {
       url.searchParams.set(k, typeof v === 'object' ? JSON.stringify(v) : v);
     });
-
     console.log('[Disha] apiCall:', action,
       '| teamCode=' + url.searchParams.get('teamCode'),
-      '| memberName=' + url.searchParams.get('memberName'),
       '| memberPasscode=' + (url.searchParams.get('memberPasscode') ? '***SET***' : 'MISSING'));
-
     const response = await fetch(url.toString(), { method: 'GET' });
     const data = await response.json();
     if (!data.success) throw new Error(data.error || 'Unknown error');
     return data.data;
   } catch (err) {
     console.error('[Disha] apiCall error (' + action + '):', err.message);
-    if (!opts.silent) {
-      showAlert('error', 'Request failed: ' + err.message + '. Please try again or contact Prof. R K Singh.');
-    }
+    if (!opts.silent) showAlert('error', 'Request failed: ' + err.message + '. Please try again or contact Prof. R K Singh.');
     throw err;
   } finally {
     if (!opts.silent) showLoading(false);
@@ -112,25 +102,18 @@ async function apiSubmit(roundNumber, payload) {
   showLoading(true);
   try {
     const formData = new FormData();
-    formData.append('action',         'submitRound');
-    formData.append('teamCode',        state.team.teamCode);
-    formData.append('memberName',      state.team.memberName     || '');
-    formData.append('memberPasscode',  state.team.memberPasscode || '');
-    formData.append('roundNumber',     roundNumber);
-    formData.append('payload',         JSON.stringify(payload));
-
-    console.log('[Disha] apiSubmit round', roundNumber,
-      '| teamCode=' + state.team.teamCode,
-      '| memberName=' + state.team.memberName,
-      '| memberPasscode=' + (state.team.memberPasscode ? '***SET***' : 'MISSING'));
-
+    formData.append('action',        'submitRound');
+    formData.append('teamCode',       state.team.teamCode);
+    formData.append('memberName',     state.team.memberName     || '');
+    formData.append('memberPasscode', state.team.memberPasscode || '');
+    formData.append('roundNumber',    roundNumber);
+    formData.append('payload',        JSON.stringify(payload));
     const response = await fetch(SIM_CONFIG.apiUrl, { method: 'POST', body: formData });
     const data = await response.json();
     if (!data.success) throw new Error(data.error || 'Submission failed');
     return data.data;
   } catch (err) {
     console.error('[Disha] apiSubmit error:', err.message);
-    // FIX 3: surface the error to the student
     showAlert('error', 'Submission failed: ' + err.message);
     throw err;
   } finally {
@@ -154,11 +137,10 @@ function readCachedBalance() {
   } catch (e) { return null; }
 }
 
-// --- BALANCE FETCH -------------------------------------------
+// --- BALANCE & ROUND STATE FETCH -----------------------------
 async function fetchTeamBalance(opts) {
   opts = opts || {};
   renderResourceTiles(readCachedBalance() || {});
-  // FIX 2: do NOT swallow — let caller handle the error
   const data = await apiCall('getTeamBalance', {}, { silent: opts.silent !== false });
   state.balance = data;
   cacheBalance(data);
@@ -167,12 +149,87 @@ async function fetchTeamBalance(opts) {
   return data;
 }
 
-// FIX 4: getRoundState does NOT send auth — it is public information.
-// The backend getConfigAll returns round lock state without requiring auth.
 async function fetchRoundState() {
   const data = await apiCall('getRoundState', {}, { silent: true });
   state.roundState = data;
   return data;
+}
+
+// =============================================================
+// LOCKED ROUND PAGE — called by every round's loadRound()
+// when the round is LOCKED and not yet submitted.
+//
+// Hides ALL content sections and replaces them with a single
+// lock screen. Students see nothing about the round's contents.
+// The Next/Prev nav is also rebuilt to skip to home.
+// =============================================================
+function lockRoundPage(roundNumber) {
+  // Hide every content section inside .container except alert-container
+  document.querySelectorAll('.container > .card, .container > .cost-calculator, .container > .shock-section, .container > .audit-section')
+    .forEach(function(el) { el.style.display = 'none'; });
+
+  // Show lock screen in the alert container
+  const ac = document.getElementById('alert-container');
+  if (ac) {
+    ac.innerHTML =
+      '<div style="text-align:center;padding:3rem 1rem;">' +
+        '<div style="font-size:3rem;margin-bottom:1rem;">&#128274;</div>' +
+        '<h2 style="color:var(--teal);margin-bottom:0.75rem;">Round ' + roundNumber + ' is not yet open</h2>' +
+        '<p style="color:var(--text-muted);font-size:1rem;max-width:480px;margin:0 auto 1.5rem;">' +
+          'This round will be opened by your instructor at the appropriate class session. ' +
+          'You will see it appear on your dashboard when it is ready.' +
+        '</p>' +
+        '<a href="home.html" class="btn btn-primary btn-large">&#8592; Return to Dashboard</a>' +
+      '</div>';
+  }
+
+  // Remove Next button so students cannot navigate deeper into locked rounds
+  const navNext = document.getElementById('navNext');
+  if (navNext) { navNext.classList.add('is-disabled'); navNext.removeAttribute('href'); }
+}
+
+// =============================================================
+// ROUND NAV — builds Previous / Home / Next buttons.
+// Called AFTER round state is known so Next is disabled for
+// locked rounds the team has not yet submitted.
+//
+// Usage in each round page (after loadRound resolves):
+//   buildRoundNav(roundNumber, roundState, submissions);
+// =============================================================
+function buildRoundNav(n, rs, submissions) {
+  rs          = rs          || {};
+  submissions = submissions || {};
+
+  const prev = document.getElementById('navPrev');
+  const next = document.getElementById('navNext');
+  if (!prev || !next) return;
+
+  // Previous — always goes back if n > 1
+  if (n <= 1) {
+    prev.classList.add('is-disabled');
+    prev.removeAttribute('href');
+  } else {
+    prev.classList.remove('is-disabled');
+    prev.href = 'round-' + (n - 1) + '.html';
+  }
+
+  // Next — only enabled if the next round is OPEN or already submitted
+  if (n >= 6) {
+    next.classList.add('is-disabled');
+    next.removeAttribute('href');
+  } else {
+    const nextKey       = 'r' + (n + 1);
+    const nextOpen      = rs[nextKey] === 'OPEN';
+    const nextSubmitted = !!submissions[nextKey];
+    if (nextOpen || nextSubmitted) {
+      next.classList.remove('is-disabled');
+      next.href = 'round-' + (n + 1) + '.html';
+    } else {
+      next.classList.add('is-disabled');
+      next.removeAttribute('href');
+      next.title = 'Round ' + (n + 1) + ' is not yet open';
+    }
+  }
 }
 
 // --- RESOURCE TILE RENDERER ----------------------------------
@@ -180,9 +237,9 @@ function renderResourceTiles(balance) {
   const container = document.getElementById('resource-tiles');
   if (!container) return;
   const r = (balance && balance.resources) || SIM_CONFIG.startingResources;
-  const budget  = (r.budgetRemaining       != null) ? r.budgetRemaining       : SIM_CONFIG.startingResources.budgetRemaining;
-  const change  = (r.changeCapital          != null) ? r.changeCapital          : SIM_CONFIG.startingResources.changeCapital;
-  const analyst = (r.analystHoursRemaining  != null) ? r.analystHoursRemaining  : SIM_CONFIG.startingResources.analystHoursRemaining;
+  const budget  = r.budgetRemaining       != null ? r.budgetRemaining       : SIM_CONFIG.startingResources.budgetRemaining;
+  const change  = r.changeCapital          != null ? r.changeCapital          : SIM_CONFIG.startingResources.changeCapital;
+  const analyst = r.analystHoursRemaining  != null ? r.analystHoursRemaining  : SIM_CONFIG.startingResources.analystHoursRemaining;
 
   let bCls = 'budget';
   if (budget < 50) bCls = 'danger'; else if (budget < 120) bCls = 'warning';
@@ -244,13 +301,13 @@ function updateCostCalculator(options) {
     return;
   }
   const r = (state.balance && state.balance.resources) || SIM_CONFIG.startingResources;
-  const newBudget  = ((r.budgetRemaining       != null) ? r.budgetRemaining       : 600) - opt.budgetCost;
-  const newChange  = ((r.changeCapital          != null) ? r.changeCapital          : 100) + opt.changeDelta;
-  const newAnalyst = ((r.analystHoursRemaining  != null) ? r.analystHoursRemaining  :  60) - opt.analystCost;
+  const newBudget  = (r.budgetRemaining       != null ? r.budgetRemaining       : 600) - opt.budgetCost;
+  const newChange  = (r.changeCapital          != null ? r.changeCapital          : 100) + opt.changeDelta;
+  const newAnalyst = (r.analystHoursRemaining  != null ? r.analystHoursRemaining  :  60) - opt.analystCost;
 
   let warns = '';
   if (newBudget  < 0) warns += '<div class="alert alert-danger" style="margin-top:0.75rem;">&#9888; Budget will be exceeded.</div>';
-  if (newChange  <= SIM_CONFIG.changeCapitalDanger) warns += '<div class="alert alert-danger" style="margin-top:0.75rem;">&#9888; Change Capital critical (&le;10). Board intervention next round.</div>';
+  if (newChange  <= SIM_CONFIG.changeCapitalDanger)  warns += '<div class="alert alert-danger" style="margin-top:0.75rem;">&#9888; Change Capital critical (&le;10). Board intervention next round.</div>';
   else if (newChange <= SIM_CONFIG.changeCapitalWarning) warns += '<div class="alert alert-warning" style="margin-top:0.75rem;">&#9888; Change Capital will fall below 30.</div>';
   if (newAnalyst < 0) warns += '<div class="alert alert-danger" style="margin-top:0.75rem;">&#9888; Analyst Hours exceeded.</div>';
   else if (newAnalyst < SIM_CONFIG.analystHoursMin) warns += '<div class="alert alert-warning" style="margin-top:0.75rem;">&#9888; Fewer than 20 Analyst Hours used &mdash; minimum-analysis warning will apply.</div>';
@@ -282,7 +339,6 @@ function validateSubmitButton() {
   const wordCount = rationale.trim().split(/\s+/).filter(Boolean).length;
   const hasOption = !!state.selectedOption;
   const hasWords  = wordCount >= 200;
-
   const wcEl = document.getElementById('word-count');
   if (wcEl) {
     wcEl.textContent = wordCount + ' words (minimum 200)';
@@ -319,7 +375,6 @@ async function submitRound(roundNumber) {
   const auditData     = collectAuditData();
   const shockResponse = (document.getElementById('shock-response') || {}).value || '';
 
-  // FIX 3: error is now surfaced by apiSubmit directly
   try {
     const result = await apiSubmit(roundNumber, {
       optionChosen:  state.selectedOption,
@@ -333,14 +388,12 @@ async function submitRound(roundNumber) {
     if (result && result.analysisWarning) msg += ' Note: ' + result.analysisWarning;
     showAlert('success', msg);
     await fetchTeamBalance({ silent: true });
-    // Lock the form
     document.querySelectorAll('.option-card, #rationale, #submit-btn, .audit-section input, .audit-section textarea, #shock-response').forEach(function(el) {
       if (['BUTTON','TEXTAREA','INPUT'].includes(el.tagName)) el.disabled = true;
       el.style.pointerEvents = 'none';
       el.style.opacity = '0.6';
     });
   } catch (err) {
-    // Error already shown by apiSubmit — nothing more needed here
     console.error('[Disha] submitRound caught:', err.message);
   }
 }
@@ -356,7 +409,6 @@ function collectAuditData() {
 // --- SHOCK EVENT VISIBILITY ----------------------------------
 async function checkShockEvents() {
   try {
-    // getConfig returns all Config key/values without auth required
     const data = await apiCall('getConfig', {}, { silent: true });
     if (data && data.ShockEvent1_Triggered === 'Y') showShockSection('shock-section-1');
     if (data && data.ShockEvent2_Triggered === 'Y') showShockSection('shock-section-2');
@@ -372,25 +424,17 @@ function showShockSection(id) {
 
 // --- LOGIN ---------------------------------------------------
 async function handleLogin() {
-  const teamCode   = ((document.getElementById('team-code-input')        || {}).value || '').trim().toUpperCase();
-  const memberName = ((document.getElementById('member-name-input')       || {}).value || '').trim();
-  const passcode   = ((document.getElementById('member-passcode-input')   || {}).value || '').trim();
+  const teamCode   = ((document.getElementById('team-code-input')      || {}).value || '').trim().toUpperCase();
+  const memberName = ((document.getElementById('member-name-input')     || {}).value || '').trim();
+  const passcode   = ((document.getElementById('member-passcode-input') || {}).value || '').trim();
 
   if (!teamCode || !memberName || !passcode) {
     showAlert('error', 'Please enter your team code, full name, and personal passcode.');
     return;
   }
-
-  // Temporarily set state.team so apiCall can build the request
   state.team = { teamCode: teamCode, memberName: memberName, memberPasscode: passcode };
-
   try {
-    // FIX 1: send passcode under BOTH param names so backend verifyMember always finds it
-    const data = await apiCall('verifyMember', {
-      passcode:       passcode,   // verifyMember reads ctx.params.passcode
-      memberPasscode: passcode,   // belt-and-braces
-    }, {});
-
+    const data = await apiCall('verifyMember', { passcode: passcode, memberPasscode: passcode }, {});
     if (!data || !data.authenticated) {
       showAlert('error', 'Incorrect credentials. Please check with Prof. R K Singh.');
       state.team = null;
@@ -400,8 +444,7 @@ async function handleLogin() {
     localStorage.setItem(LS_KEYS.teamName,        data.teamName);
     localStorage.setItem(LS_KEYS.memberName,      data.memberName);
     localStorage.setItem(LS_KEYS.memberPasscode,  passcode);
-
-    console.log('[Disha] Login success. Stored:', data.teamCode, data.memberName);
+    console.log('[Disha] Login success:', data.teamCode, data.memberName);
     window.location.href = 'home.html';
   } catch (err) {
     state.team = null;
