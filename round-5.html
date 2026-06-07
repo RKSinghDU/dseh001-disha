@@ -18,34 +18,28 @@
 <div class="container">
   <div id="alert-container"></div>
   <div class="card"><div class="card-title">Current Resources</div><div id="resource-tiles" class="resource-grid"></div></div>
-
-  <!-- Shock Event 2 — hidden until triggered -->
   <div class="shock-section" id="shock-section-2">
     <div class="shock-title">&#9889; SHOCK EVENT 2 — VIRAL GIG-WORKER GRIEVANCE</div>
     <div id="shock-text-2" style="margin-bottom:1rem;font-size:0.95rem;line-height:1.8;white-space:pre-line;border-left:4px solid var(--shock-border);padding-left:1rem;font-style:italic;"></div>
-    <label for="shock-response">Your Public Response &amp; Internal Commitment (mandatory before submitting this round):</label>
-    <textarea id="shock-response" placeholder="Address all four points in the shock description..." oninput="validateSubmitButton()"></textarea>
+    <label for="shock-response">Your Public Response &amp; Internal Commitment (mandatory before submitting):</label>
+    <textarea id="shock-response" placeholder="Address all four points..." oninput="validateSubmitButton()"></textarea>
   </div>
-
   <div class="card">
     <div class="card-title">&#128202; Section 1 &mdash; Guided Dataset Analysis</div>
-    <div class="alert alert-info">Open <strong>PeopleAnalytics_Fact</strong> tab and complete the following.</div>
+    <div class="alert alert-info">Open <strong>PeopleAnalytics_Fact</strong> tab.</div>
     <ol id="data-brief-list" style="margin:1rem 0 0 1.5rem;line-height:2;"></ol>
   </div>
-
   <div class="card">
     <div class="card-title">&#9654; Section 2 &mdash; Choose ONE Attrition Story Approach</div>
     <div id="options-list"></div>
   </div>
   <div class="cost-calculator" id="cost-calculator"><div class="cost-row"><em>Select an option to see resource impact</em></div></div>
-
   <div class="card">
     <div class="card-title">&#9997; Section 3 &mdash; Evidence Rationale (minimum 200 words)</div>
-    <div class="alert alert-info" style="font-size:0.9rem;">Address: (1) What are the top 2&ndash;3 attrition drivers based on your analysis? Cite mean scores/rates. (2) Is age a genuine driver or a proxy for something else? (3) How does your approach build on R4's model corrections? (4) If Shock 2 was triggered, how does your public response connect to the gig-worker data? (5) What is the narrative frame for the Board?</div>
+    <div class="alert alert-info" style="font-size:0.9rem;">Address: (1) Top 2&ndash;3 attrition drivers, citing mean scores/rates? (2) Is age a genuine driver or a proxy? (3) How does your approach build on R4's corrections? (4) If Shock 2 triggered, how does your response connect to gig-worker data? (5) Narrative frame for the Board?</div>
     <textarea id="rationale" placeholder="Write your evidence rationale..." oninput="validateSubmitButton()"></textarea>
     <div id="word-count" class="word-count">0 words (minimum 200)</div>
   </div>
-
   <div class="card" style="text-align:center;">
     <p style="color:var(--text-muted);font-size:0.9rem;margin-bottom:1rem;">One submission per team &mdash; cannot be undone.</p>
     <button class="btn btn-primary btn-large" id="submit-btn" disabled onclick="submitRound(5)">Submit Round 5 Decision</button>
@@ -55,21 +49,36 @@
 <div class="footer">Project Disha &middot; DSEH001 &middot; Prof. R K Singh &middot; For private circulation</div>
 <script src="simulation.js"></script><script src="round-5-data.js"></script>
 <script>
+  var ROUND_N = 5;
   initSimulation();
   document.getElementById('shock-text-2').textContent = SHOCK_2_TEXT;
-  document.getElementById('data-brief-list').innerHTML = ROUND_5_DATA_BRIEF.map(function(q){return '<li>'+q+'</li>';}).join('');
+  document.getElementById('data-brief-list').innerHTML = ROUND_5_DATA_BRIEF.map(function(q){ return '<li>'+q+'</li>'; }).join('');
   document.getElementById('options-list').innerHTML = ROUND_5_OPTIONS.map(function(opt){
     var sign=opt.changeDelta>=0?'+':'';
-    return '<div class="option-card" data-code="'+opt.code+'" onclick="selectOption(\''+opt.code+'\',ROUND_5_OPTIONS)">' +
-      '<div class="option-header"><span class="option-code">'+opt.code+'</span><span class="option-name">'+opt.name+'</span></div>' +
-      '<div class="option-desc">'+opt.description+'</div>' +
-      '<div class="option-cost"><span class="cost-tag">&#8377;'+opt.budgetCost+'L</span><span class="cost-tag">&#9200; '+opt.analystCost+' hrs</span>' +
+    return '<div class="option-card" data-code="'+opt.code+'" onclick="selectOption(\''+opt.code+'\',ROUND_5_OPTIONS)">'+
+      '<div class="option-header"><span class="option-code">'+opt.code+'</span><span class="option-name">'+opt.name+'</span></div>'+
+      '<div class="option-desc">'+opt.description+'</div>'+
+      '<div class="option-cost"><span class="cost-tag">&#8377;'+opt.budgetCost+'L</span><span class="cost-tag">&#9200; '+opt.analystCost+' hrs</span>'+
       '<span class="cost-tag" style="background:'+(opt.changeDelta>=0?'#E8F5E9':'#FEECEC')+';color:'+(opt.changeDelta>=0?'var(--success)':'var(--danger)')+';">CC '+sign+opt.changeDelta+'</span></div></div>';
   }).join('');
-  async function loadRound(){try{await fetchTeamBalance();var rs=await fetchRoundState();if(rs&&rs.r5!=='OPEN'){showAlert('warning','Round 5 is not yet open.');document.getElementById('submit-btn').disabled=true;}if(rs&&rs.submitted_r5){showAlert('info','Already submitted.');document.getElementById('submit-btn').disabled=true;document.getElementById('submit-btn').textContent='Already Submitted';}await checkShockEvents();}catch(e){}}
+  async function loadRound(){
+    var btn=document.getElementById('submit-btn');
+    try{
+      var balance=await fetchTeamBalance();
+      var rs=await fetchRoundState();
+      var subs=(balance&&balance.submissions)||{};
+      buildRoundNav(ROUND_N,rs,subs);
+      if(!rs||rs['r'+ROUND_N]!=='OPEN'){lockRoundPage(ROUND_N);return;}
+      if(subs['r'+ROUND_N]){showAlert('info','Already submitted. Read-only.');btn.disabled=true;btn.textContent='Already Submitted';document.querySelectorAll('.option-card').forEach(function(el){el.style.pointerEvents='none';el.style.opacity='0.6';});}
+      await checkShockEvents();
+    }catch(e){console.error('[Disha] loadRound:',e.message);showAlert('error','Could not load round data: '+e.message);btn.disabled=true;}
+  }
   loadRound();
 </script>
-<nav class="round-nav"><a id="navPrev" class="round-nav-btn round-nav-prev" href="#">&larr; Previous</a><a class="round-nav-btn round-nav-home" href="home.html">Home</a><a id="navNext" class="round-nav-btn round-nav-next" href="#">Next &rarr;</a></nav>
-<script>(function(){var m=(location.pathname.match(/round-(\d+)\.html/)||[])[1];var n=m?parseInt(m,10):null;var prev=document.getElementById('navPrev'),next=document.getElementById('navNext');if(n===null)return;if(n<=1){prev.classList.add('is-disabled');prev.removeAttribute('href');}else{prev.href='round-'+(n-1)+'.html';}if(n>=6){next.classList.add('is-disabled');next.removeAttribute('href');}else{next.href='round-'+(n+1)+'.html';}})();</script>
+<nav class="round-nav" aria-label="Round navigation">
+  <a id="navPrev" class="round-nav-btn round-nav-prev" href="#">&larr; Previous</a>
+  <a class="round-nav-btn round-nav-home" href="home.html">Home</a>
+  <a id="navNext" class="round-nav-btn round-nav-next" href="#">Next &rarr;</a>
+</nav>
 </body>
 </html>
