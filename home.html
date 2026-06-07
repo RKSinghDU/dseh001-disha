@@ -8,7 +8,7 @@
 </head>
 <body>
 <div class="header">
-  <div class="header-inner" style="display:flex; justify-content:space-between; align-items:center;">
+  <div class="header-inner" style="display:flex;justify-content:space-between;align-items:center;">
     <div>
       <h1>PROJECT <span class="gold">DISHA</span></h1>
       <div class="subtitle">Team Dashboard &middot; <strong id="team-name-display"></strong> &middot; Logged in: <span id="member-name-display"></span></div>
@@ -25,32 +25,31 @@
     <div class="card-title">Team Resources</div>
     <div id="resource-tiles" class="resource-grid"></div>
     <div id="change-capital-warning" class="alert alert-danger hidden" style="margin-top:1rem;">
-      &#9888; <strong>Board Intervention:</strong> Change Capital has fallen to critical levels (&le;10). A mandatory advisory round is triggered. Contact your instructor.
+      &#9888; <strong>Board Intervention:</strong> Change Capital has fallen to critical levels (&le;10). Contact your instructor.
     </div>
+  </div>
+
+  <!-- Scores This Semester -->
+  <div class="card" id="scores-card" style="display:none;">
+    <div class="card-title">&#127942; Your Scores So Far</div>
+    <div id="scores-table-container"></div>
   </div>
 
   <!-- Debt Ledger -->
   <div class="card">
     <div class="card-title">&#9888; Debt Ledger — Deferred Problems</div>
-    <p style="font-size:0.9rem; color:var(--text-muted); margin-bottom:1rem;">Problems your team has deferred appear here with their escalation costs. Resolve them before the deadline round or the cost is deducted automatically.</p>
+    <p style="font-size:0.9rem;color:var(--text-muted);margin-bottom:1rem;">Problems your team has deferred appear here. Resolve them before the deadline round or the cost is deducted automatically.</p>
     <div id="debt-ledger-container"></div>
   </div>
 
-  <!-- Round Navigation -->
+  <!-- Round Navigation — rendered dynamically -->
   <div class="card">
     <div class="card-title">Simulation Rounds</div>
-    <table>
-      <thead><tr><th>Round</th><th>Title</th><th>Key event</th><th>Access</th></tr></thead>
-      <tbody>
-        <tr><td><strong>R1</strong></td><td>The Diagnosis</td><td>Baseline dataset analysis</td><td><a href="round-1.html" class="btn btn-primary" style="padding:0.4rem 1rem;">Open</a></td></tr>
-        <tr><td><strong>R2</strong></td><td>The Architecture</td><td>D1 due</td><td><a href="round-2.html" class="btn btn-primary" style="padding:0.4rem 1rem;">Open</a></td></tr>
-        <tr><td><strong>R3</strong></td><td>The Rollout</td><td>Shock Event 1 (DPDP breach)</td><td><a href="round-3.html" class="btn btn-primary" style="padding:0.4rem 1rem;">Open</a></td></tr>
-        <tr><td><strong>R4</strong></td><td>The Audit</td><td>Algorithmic Fairness Audit (signature round)</td><td><a href="round-4.html" class="btn btn-primary" style="padding:0.4rem 1rem;">Open</a></td></tr>
-        <tr><td><strong>R5</strong></td><td>The Story</td><td>Shock Event 2 (viral gig grievance)</td><td><a href="round-5.html" class="btn btn-primary" style="padding:0.4rem 1rem;">Open</a></td></tr>
-        <tr><td><strong>R6</strong></td><td>The Future</td><td>D2 due &middot; Final strategy</td><td><a href="round-6.html" class="btn btn-primary" style="padding:0.4rem 1rem;">Open</a></td></tr>
-      </tbody>
+    <div id="rounds-loading" style="color:var(--text-muted);font-size:0.9rem;padding:0.5rem 0;">Loading round status...</div>
+    <table id="rounds-table" style="display:none;">
+      <thead><tr><th>Round</th><th>Title</th><th>Key Event</th><th>Status</th><th>Action</th></tr></thead>
+      <tbody id="rounds-tbody"></tbody>
     </table>
-    <p style="font-size:0.85rem; color:var(--text-muted); margin-top:0.75rem;">Rounds open only when your instructor activates them. If a round page shows &ldquo;Round is locked&rdquo;, check back after the class session.</p>
   </div>
 
   <!-- Human Anchors -->
@@ -70,14 +69,14 @@
   <!-- Quick Links -->
   <div class="card">
     <div class="card-title">Quick Links</div>
-    <div style="display:flex; flex-wrap:wrap; gap:0.75rem;">
+    <div style="display:flex;flex-wrap:wrap;gap:0.75rem;">
       <a href="DATASET_LINK_PLACEHOLDER" target="_blank" class="btn btn-secondary">GreenLeaf Dataset</a>
       <a href="ROUND_BRIEFS_FOLDER_PLACEHOLDER" target="_blank" class="btn btn-secondary">Round Briefs</a>
       <a href="D1_ASSIGNMENT_PLACEHOLDER" target="_blank" class="btn btn-secondary">D1 Submission</a>
       <a href="D2_ASSIGNMENT_PLACEHOLDER" target="_blank" class="btn btn-secondary">D2 Submission</a>
       <a href="REFLECTION_FORM_PLACEHOLDER" target="_blank" class="btn btn-secondary">Reflection Form</a>
     </div>
-    <p style="font-size:0.8rem; color:var(--text-muted); margin-top:0.75rem;">Links will be activated by your instructor before each deadline.</p>
+    <p style="font-size:0.8rem;color:var(--text-muted);margin-top:0.75rem;">Links will be activated by your instructor before each deadline.</p>
   </div>
 </div>
 
@@ -88,8 +87,111 @@
 
 <script src="simulation.js"></script>
 <script>
+  // Round metadata (title, key event, page link)
+  var ROUND_META = [
+    { n:1, title:'The Diagnosis',    event:'Baseline dataset analysis',               page:'round-1.html' },
+    { n:2, title:'The Architecture', event:'D1 due at close',                         page:'round-2.html' },
+    { n:3, title:'The Rollout',      event:'Shock Event 1 possible (DPDP breach)',    page:'round-3.html' },
+    { n:4, title:'The Audit',        event:'Algorithmic Fairness Audit',              page:'round-4.html' },
+    { n:5, title:'The Story',        event:'Shock Event 2 possible (gig grievance)',  page:'round-5.html' },
+    { n:6, title:'The Future',       event:'D2 due at close',                         page:'round-6.html' },
+  ];
+
   initSimulation();
-  fetchTeamBalance();
+
+  async function loadDashboard() {
+    try {
+      // Load balance (auth required) and round state (public) in parallel
+      var balancePromise = fetchTeamBalance();
+      var roundStatePromise = fetchRoundState();
+
+      var balance = await balancePromise;
+      var rs      = await roundStatePromise;
+
+      renderRoundsTable(rs, balance);
+      renderScores(balance);
+
+    } catch(e) {
+      console.error('[Disha] Dashboard load error:', e.message);
+      document.getElementById('rounds-loading').textContent =
+        'Could not load round status: ' + e.message;
+    }
+  }
+
+  /**
+   * Render the rounds table.
+   * A round row is shown as:
+   *   OPEN     → green "Enter Round N" button (clickable)
+   *   LOCKED   → grey "Locked" badge — row is visible so team sees the round exists,
+   *              but no link. Title and key event are shown so anticipation builds.
+   *   submitted → shows "Submitted ✓" — team already played this round
+   */
+  function renderRoundsTable(rs, balance) {
+    var submissions = (balance && balance.submissions) || {};
+    var tbody = document.getElementById('rounds-tbody');
+    var rows  = '';
+
+    ROUND_META.forEach(function(meta) {
+      var lockKey   = 'r' + meta.n;                        // e.g. 'r1'
+      var lockState = rs ? rs[lockKey] : 'LOCKED';         // 'OPEN' or 'LOCKED'
+      var submitted = !!submissions[lockKey];               // true if team already submitted
+
+      var statusBadge, actionCell;
+
+      if (submitted) {
+        statusBadge = '<span style="background:var(--success);color:white;padding:0.2rem 0.7rem;border-radius:4px;font-size:0.85rem;">Submitted &#10003;</span>';
+        actionCell  = '<a href="' + meta.page + '" class="btn btn-secondary" style="padding:0.35rem 0.9rem;font-size:0.85rem;">View</a>';
+      } else if (lockState === 'OPEN') {
+        statusBadge = '<span style="background:var(--teal);color:white;padding:0.2rem 0.7rem;border-radius:4px;font-size:0.85rem;">OPEN</span>';
+        actionCell  = '<a href="' + meta.page + '" class="btn btn-primary" style="padding:0.35rem 0.9rem;font-size:0.85rem;">Enter Round ' + meta.n + '</a>';
+      } else {
+        // LOCKED — show the round exists but no link
+        statusBadge = '<span style="background:var(--text-muted);color:white;padding:0.2rem 0.7rem;border-radius:4px;font-size:0.85rem;">Locked</span>';
+        actionCell  = '<span style="color:var(--text-muted);font-size:0.85rem;">Not yet open</span>';
+      }
+
+      rows += '<tr>' +
+        '<td><strong>R' + meta.n + '</strong></td>' +
+        '<td>' + meta.title + '</td>' +
+        '<td style="font-size:0.85rem;color:var(--text-muted);">' + meta.event + '</td>' +
+        '<td>' + statusBadge + '</td>' +
+        '<td>' + actionCell + '</td>' +
+        '</tr>';
+    });
+
+    tbody.innerHTML = rows;
+    document.getElementById('rounds-loading').style.display = 'none';
+    document.getElementById('rounds-table').style.display   = 'table';
+  }
+
+  /**
+   * Render a per-round score table from submission history.
+   * Uses balance.submissions (which contains optionChosen per round)
+   * to show what the team submitted. Full score breakdown is in the
+   * Scoring tab and will be shown here once the instructor has reviewed.
+   */
+  function renderScores(balance) {
+    var submissions = (balance && balance.submissions) || {};
+    var played = Object.keys(submissions).filter(function(k) { return k.startsWith('r'); });
+    if (played.length === 0) return;   // nothing submitted yet — hide the card
+
+    var html = '<table><thead><tr><th>Round</th><th>Option chosen</th><th>Submitted</th></tr></thead><tbody>';
+    ROUND_META.forEach(function(meta) {
+      var sub = submissions['r' + meta.n];
+      if (!sub) return;
+      var ts = sub.timestamp ? new Date(sub.timestamp).toLocaleString('en-IN', { dateStyle:'medium', timeStyle:'short' }) : '—';
+      html += '<tr><td><strong>R' + meta.n + ' — ' + meta.title + '</strong></td>' +
+              '<td>' + (sub.optionChosen || '—') + '</td>' +
+              '<td style="font-size:0.85rem;color:var(--text-muted);">' + ts + '</td></tr>';
+    });
+    html += '</tbody></table>';
+    html += '<p style="font-size:0.82rem;color:var(--text-muted);margin-top:0.75rem;">Detailed axis scores (Analytical Rigour, Financial Discipline, Equity &amp; Compliance, Adoption &amp; Change, Strategic Coherence) are reviewed and released by your instructor after each debrief.</p>';
+
+    document.getElementById('scores-table-container').innerHTML = html;
+    document.getElementById('scores-card').style.display = 'block';
+  }
+
+  loadDashboard();
 </script>
 </body>
 </html>
