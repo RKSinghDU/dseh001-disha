@@ -29,27 +29,35 @@
     </div>
   </div>
 
-  <!-- Scores This Semester -->
+  <!-- Submission History (only shown once a round has been submitted) -->
   <div class="card" id="scores-card" style="display:none;">
-    <div class="card-title">&#127942; Your Scores So Far</div>
+    <div class="card-title">&#127942; Your Submission History</div>
     <div id="scores-table-container"></div>
   </div>
 
   <!-- Debt Ledger -->
   <div class="card">
     <div class="card-title">&#9888; Debt Ledger — Deferred Problems</div>
-    <p style="font-size:0.9rem;color:var(--text-muted);margin-bottom:1rem;">Problems your team has deferred appear here. Resolve them before the deadline round or the cost is deducted automatically.</p>
+    <p style="font-size:0.9rem;color:var(--text-muted);margin-bottom:1rem;">Problems deferred by your team appear here. Resolve them before the deadline round or the cost is deducted automatically.</p>
     <div id="debt-ledger-container"></div>
   </div>
 
-  <!-- Round Navigation — rendered dynamically -->
+  <!-- Round Navigation — only OPEN and SUBMITTED rounds shown; LOCKED rounds hidden -->
   <div class="card">
     <div class="card-title">Simulation Rounds</div>
-    <div id="rounds-loading" style="color:var(--text-muted);font-size:0.9rem;padding:0.5rem 0;">Loading round status...</div>
-    <table id="rounds-table" style="display:none;">
-      <thead><tr><th>Round</th><th>Title</th><th>Key Event</th><th>Status</th><th>Action</th></tr></thead>
-      <tbody id="rounds-tbody"></tbody>
-    </table>
+    <div id="rounds-loading" style="color:var(--text-muted);font-size:0.9rem;padding:0.5rem 0;">Loading round status&hellip;</div>
+    <div id="rounds-content" style="display:none;">
+      <table id="rounds-table">
+        <thead><tr><th>Round</th><th>Title</th><th>Key Event</th><th>Status</th><th>Action</th></tr></thead>
+        <tbody id="rounds-tbody"></tbody>
+      </table>
+      <p id="no-rounds-msg" style="display:none;color:var(--text-muted);font-size:0.9rem;padding:0.5rem 0;">
+        No rounds are open yet. Your instructor will open Round 1 in the first simulation class.
+      </p>
+      <p style="font-size:0.82rem;color:var(--text-muted);margin-top:0.75rem;">
+        Rounds appear here only when your instructor opens them. Future rounds are not shown in advance.
+      </p>
+    </div>
   </div>
 
   <!-- Human Anchors -->
@@ -66,132 +74,185 @@
     </table>
   </div>
 
-  <!-- Quick Links -->
-  <div class="card">
+  <!-- Quick Links — instructor fills in real URLs below before semester starts -->
+  <div class="card" id="quicklinks-card">
     <div class="card-title">Quick Links</div>
-    <div style="display:flex;flex-wrap:wrap;gap:0.75rem;">
-      <a href="DATASET_LINK_PLACEHOLDER" target="_blank" class="btn btn-secondary">GreenLeaf Dataset</a>
-      <a href="ROUND_BRIEFS_FOLDER_PLACEHOLDER" target="_blank" class="btn btn-secondary">Round Briefs</a>
-      <a href="D1_ASSIGNMENT_PLACEHOLDER" target="_blank" class="btn btn-secondary">D1 Submission</a>
-      <a href="D2_ASSIGNMENT_PLACEHOLDER" target="_blank" class="btn btn-secondary">D2 Submission</a>
-      <a href="REFLECTION_FORM_PLACEHOLDER" target="_blank" class="btn btn-secondary">Reflection Form</a>
-    </div>
-    <p style="font-size:0.8rem;color:var(--text-muted);margin-top:0.75rem;">Links will be activated by your instructor before each deadline.</p>
+    <div id="quicklinks-container" style="display:flex;flex-wrap:wrap;gap:0.75rem;"></div>
+    <p style="font-size:0.8rem;color:var(--text-muted);margin-top:0.75rem;">
+      Links are activated by your instructor as each deadline approaches.
+    </p>
   </div>
-</div>
+
+</div><!-- /container -->
 
 <div id="loading-overlay" class="loading-overlay">
-  <div class="loading-box"><div class="spinner"></div><div>Loading...</div></div>
+  <div class="loading-box"><div class="spinner"></div><div>Loading&hellip;</div></div>
 </div>
 <div class="footer">Project Disha &middot; DSEH001 Digital HR &amp; People Analytics &middot; Prof. R K Singh &middot; For private circulation</div>
 
 <script src="simulation.js"></script>
 <script>
-  // Round metadata (title, key event, page link)
-  var ROUND_META = [
-    { n:1, title:'The Diagnosis',    event:'Baseline dataset analysis',               page:'round-1.html' },
-    { n:2, title:'The Architecture', event:'D1 due at close',                         page:'round-2.html' },
-    { n:3, title:'The Rollout',      event:'Shock Event 1 possible (DPDP breach)',    page:'round-3.html' },
-    { n:4, title:'The Audit',        event:'Algorithmic Fairness Audit',              page:'round-4.html' },
-    { n:5, title:'The Story',        event:'Shock Event 2 possible (gig grievance)',  page:'round-5.html' },
-    { n:6, title:'The Future',       event:'D2 due at close',                         page:'round-6.html' },
-  ];
+// ============================================================
+// QUICK LINKS CONFIGURATION
+// Paste the real URLs here before the semester starts.
+// Set url: null to hide a link entirely until it is ready.
+// ============================================================
+var QUICK_LINKS = [
+  {
+    label: 'GreenLeaf Dataset',
+    url:   'https://drive.google.com/drive/folders/1DPDpBN9ZeiVIpeRJsdVAMgVSoL4tXy19',
+    // Replace above with the direct shareable link to GreenLeaf_Disha_DSEH001_Dataset.xlsx
+  },
+  {
+    label: 'Round Briefs Folder',
+    url:   null,   // paste Google Drive folder link when ready
+  },
+  {
+    label: 'D1 Submission',
+    url:   null,   // paste Google Classroom assignment link when ready
+  },
+  {
+    label: 'D2 Submission',
+    url:   null,   // paste Google Classroom assignment link when ready
+  },
+  {
+    label: 'Reflection Form',
+    url:   null,   // paste Google Form link when ready
+  },
+];
 
-  initSimulation();
+// Round metadata — title, key event, page filename
+var ROUND_META = [
+  { n:1, title:'The Diagnosis',    event:'Baseline dataset analysis',              page:'round-1.html' },
+  { n:2, title:'The Architecture', event:'D1 due at close',                        page:'round-2.html' },
+  { n:3, title:'The Rollout',      event:'Shock Event possible mid-round',         page:'round-3.html' },
+  { n:4, title:'The Audit',        event:'Algorithmic Fairness Audit',             page:'round-4.html' },
+  { n:5, title:'The Story',        event:'Shock Event possible mid-round',         page:'round-5.html' },
+  { n:6, title:'The Future',       event:'D2 due at close',                        page:'round-6.html' },
+];
 
-  async function loadDashboard() {
-    try {
-      // Load balance (auth required) and round state (public) in parallel
-      var balancePromise = fetchTeamBalance();
-      var roundStatePromise = fetchRoundState();
+// ============================================================
+// DASHBOARD INIT
+// ============================================================
+initSimulation();
+renderQuickLinks();
 
-      var balance = await balancePromise;
-      var rs      = await roundStatePromise;
+async function loadDashboard() {
+  try {
+    var balance    = await fetchTeamBalance();
+    var rs         = await fetchRoundState();
+    renderRoundsTable(rs, balance);
+    renderSubmissionHistory(balance);
+  } catch(e) {
+    console.error('[Disha] Dashboard load error:', e.message);
+    document.getElementById('rounds-loading').textContent =
+      'Could not load round status: ' + e.message;
+  }
+}
 
-      renderRoundsTable(rs, balance);
-      renderScores(balance);
+// ============================================================
+// ROUNDS TABLE
+// Only OPEN rounds and already-SUBMITTED rounds are shown.
+// LOCKED rounds that have never been submitted are hidden
+// completely — no title, no clue about what is coming.
+// ============================================================
+function renderRoundsTable(rs, balance) {
+  var submissions = (balance && balance.submissions) || {};
+  var tbody  = document.getElementById('rounds-tbody');
+  var rows   = '';
+  var shown  = 0;
 
-    } catch(e) {
-      console.error('[Disha] Dashboard load error:', e.message);
-      document.getElementById('rounds-loading').textContent =
-        'Could not load round status: ' + e.message;
+  ROUND_META.forEach(function(meta) {
+    var lockKey   = 'r' + meta.n;
+    var lockState = rs ? rs[lockKey] : 'LOCKED';
+    var submitted = !!submissions[lockKey];
+
+    // HIDE if locked AND never submitted
+    if (lockState !== 'OPEN' && !submitted) return;
+
+    shown++;
+    var statusBadge, actionCell;
+
+    if (submitted) {
+      statusBadge = '<span style="background:var(--success);color:white;padding:0.2rem 0.7rem;border-radius:4px;font-size:0.85rem;">Submitted &#10003;</span>';
+      actionCell  = '<a href="' + meta.page + '" class="btn btn-secondary" style="padding:0.35rem 0.9rem;font-size:0.85rem;">View</a>';
+    } else {
+      // OPEN and not yet submitted
+      statusBadge = '<span style="background:var(--teal);color:white;padding:0.2rem 0.7rem;border-radius:4px;font-size:0.85rem;">OPEN</span>';
+      actionCell  = '<a href="' + meta.page + '" class="btn btn-primary" style="padding:0.35rem 0.9rem;font-size:0.85rem;">Enter Round ' + meta.n + '</a>';
     }
+
+    rows += '<tr>' +
+      '<td><strong>R' + meta.n + '</strong></td>' +
+      '<td>' + meta.title + '</td>' +
+      '<td style="font-size:0.85rem;color:var(--text-muted);">' + meta.event + '</td>' +
+      '<td>' + statusBadge + '</td>' +
+      '<td>' + actionCell + '</td>' +
+      '</tr>';
+  });
+
+  tbody.innerHTML = rows;
+
+  document.getElementById('rounds-loading').style.display  = 'none';
+  document.getElementById('rounds-content').style.display  = 'block';
+
+  if (shown === 0) {
+    document.getElementById('rounds-table').style.display   = 'none';
+    document.getElementById('no-rounds-msg').style.display  = 'block';
+  }
+}
+
+// ============================================================
+// SUBMISSION HISTORY
+// Shows option chosen and timestamp per round — visible only
+// after at least one round has been submitted.
+// ============================================================
+function renderSubmissionHistory(balance) {
+  var submissions = (balance && balance.submissions) || {};
+  var played = ROUND_META.filter(function(m) { return !!submissions['r' + m.n]; });
+  if (played.length === 0) return;
+
+  var html = '<table><thead><tr><th>Round</th><th>Option Chosen</th><th>Submitted</th></tr></thead><tbody>';
+  played.forEach(function(meta) {
+    var sub = submissions['r' + meta.n];
+    var ts  = sub.timestamp
+      ? new Date(sub.timestamp).toLocaleString('en-IN', { dateStyle:'medium', timeStyle:'short' })
+      : '—';
+    html += '<tr>' +
+      '<td><strong>R' + meta.n + ' &mdash; ' + meta.title + '</strong></td>' +
+      '<td>' + (sub.optionChosen || '—') + '</td>' +
+      '<td style="font-size:0.85rem;color:var(--text-muted);">' + ts + '</td>' +
+      '</tr>';
+  });
+  html += '</tbody></table>';
+  html += '<p style="font-size:0.82rem;color:var(--text-muted);margin-top:0.75rem;">' +
+    'Detailed axis scores (Analytical Rigour, Financial Discipline, Equity &amp; Compliance, ' +
+    'Adoption &amp; Change, Strategic Coherence) are reviewed and released by your instructor after each debrief.' +
+    '</p>';
+
+  document.getElementById('scores-table-container').innerHTML = html;
+  document.getElementById('scores-card').style.display = 'block';
+}
+
+// ============================================================
+// QUICK LINKS — only renders links where url is not null
+// ============================================================
+function renderQuickLinks() {
+  var container = document.getElementById('quicklinks-container');
+  var active    = QUICK_LINKS.filter(function(l) { return !!l.url; });
+
+  if (active.length === 0) {
+    // Nothing ready yet — hide the card entirely
+    document.getElementById('quicklinks-card').style.display = 'none';
+    return;
   }
 
-  /**
-   * Render the rounds table.
-   * A round row is shown as:
-   *   OPEN     → green "Enter Round N" button (clickable)
-   *   LOCKED   → grey "Locked" badge — row is visible so team sees the round exists,
-   *              but no link. Title and key event are shown so anticipation builds.
-   *   submitted → shows "Submitted ✓" — team already played this round
-   */
-  function renderRoundsTable(rs, balance) {
-    var submissions = (balance && balance.submissions) || {};
-    var tbody = document.getElementById('rounds-tbody');
-    var rows  = '';
+  container.innerHTML = active.map(function(l) {
+    return '<a href="' + l.url + '" target="_blank" class="btn btn-secondary">' + l.label + '</a>';
+  }).join('');
+}
 
-    ROUND_META.forEach(function(meta) {
-      var lockKey   = 'r' + meta.n;                        // e.g. 'r1'
-      var lockState = rs ? rs[lockKey] : 'LOCKED';         // 'OPEN' or 'LOCKED'
-      var submitted = !!submissions[lockKey];               // true if team already submitted
-
-      var statusBadge, actionCell;
-
-      if (submitted) {
-        statusBadge = '<span style="background:var(--success);color:white;padding:0.2rem 0.7rem;border-radius:4px;font-size:0.85rem;">Submitted &#10003;</span>';
-        actionCell  = '<a href="' + meta.page + '" class="btn btn-secondary" style="padding:0.35rem 0.9rem;font-size:0.85rem;">View</a>';
-      } else if (lockState === 'OPEN') {
-        statusBadge = '<span style="background:var(--teal);color:white;padding:0.2rem 0.7rem;border-radius:4px;font-size:0.85rem;">OPEN</span>';
-        actionCell  = '<a href="' + meta.page + '" class="btn btn-primary" style="padding:0.35rem 0.9rem;font-size:0.85rem;">Enter Round ' + meta.n + '</a>';
-      } else {
-        // LOCKED — show the round exists but no link
-        statusBadge = '<span style="background:var(--text-muted);color:white;padding:0.2rem 0.7rem;border-radius:4px;font-size:0.85rem;">Locked</span>';
-        actionCell  = '<span style="color:var(--text-muted);font-size:0.85rem;">Not yet open</span>';
-      }
-
-      rows += '<tr>' +
-        '<td><strong>R' + meta.n + '</strong></td>' +
-        '<td>' + meta.title + '</td>' +
-        '<td style="font-size:0.85rem;color:var(--text-muted);">' + meta.event + '</td>' +
-        '<td>' + statusBadge + '</td>' +
-        '<td>' + actionCell + '</td>' +
-        '</tr>';
-    });
-
-    tbody.innerHTML = rows;
-    document.getElementById('rounds-loading').style.display = 'none';
-    document.getElementById('rounds-table').style.display   = 'table';
-  }
-
-  /**
-   * Render a per-round score table from submission history.
-   * Uses balance.submissions (which contains optionChosen per round)
-   * to show what the team submitted. Full score breakdown is in the
-   * Scoring tab and will be shown here once the instructor has reviewed.
-   */
-  function renderScores(balance) {
-    var submissions = (balance && balance.submissions) || {};
-    var played = Object.keys(submissions).filter(function(k) { return k.startsWith('r'); });
-    if (played.length === 0) return;   // nothing submitted yet — hide the card
-
-    var html = '<table><thead><tr><th>Round</th><th>Option chosen</th><th>Submitted</th></tr></thead><tbody>';
-    ROUND_META.forEach(function(meta) {
-      var sub = submissions['r' + meta.n];
-      if (!sub) return;
-      var ts = sub.timestamp ? new Date(sub.timestamp).toLocaleString('en-IN', { dateStyle:'medium', timeStyle:'short' }) : '—';
-      html += '<tr><td><strong>R' + meta.n + ' — ' + meta.title + '</strong></td>' +
-              '<td>' + (sub.optionChosen || '—') + '</td>' +
-              '<td style="font-size:0.85rem;color:var(--text-muted);">' + ts + '</td></tr>';
-    });
-    html += '</tbody></table>';
-    html += '<p style="font-size:0.82rem;color:var(--text-muted);margin-top:0.75rem;">Detailed axis scores (Analytical Rigour, Financial Discipline, Equity &amp; Compliance, Adoption &amp; Change, Strategic Coherence) are reviewed and released by your instructor after each debrief.</p>';
-
-    document.getElementById('scores-table-container').innerHTML = html;
-    document.getElementById('scores-card').style.display = 'block';
-  }
-
-  loadDashboard();
+loadDashboard();
 </script>
 </body>
 </html>
