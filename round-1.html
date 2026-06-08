@@ -17,7 +17,7 @@
 </div>
 <div class="container">
   <div id="alert-container"></div>
-  <div class="card"><div class="card-title">Current Resources</div><div id="resource-tiles" class="resource-grid"></div></div>
+  <div class="card"><div class="card-title">Resources</div><div id="resource-tiles" class="resource-grid"></div></div>
   <div class="card">
     <div class="card-title">&#128202; Section 1 &mdash; Guided Dataset Analysis</div>
     <div class="alert alert-info">Open <strong>GreenLeaf_Disha_DSEH001_Dataset.xlsx &rarr; Employee_Master</strong> tab and answer the following before selecting your option. Your Evidence Rationale must cite specific computed figures.</div>
@@ -46,37 +46,30 @@
 <script>
   var ROUND_N = 1;
   initSimulation();
-  document.getElementById('data-brief-list').innerHTML = ROUND_1_DATA_BRIEF.map(function(q){ return '<li>' + q + '</li>'; }).join('');
-  document.getElementById('options-list').innerHTML = ROUND_1_OPTIONS.map(function(opt) {
-    var sign = opt.changeDelta >= 0 ? '+' : '';
-    return '<div class="option-card" data-code="' + opt.code + '" onclick="selectOption(\'' + opt.code + '\', ROUND_1_OPTIONS)">' +
-      '<div class="option-header"><span class="option-code">' + opt.code + '</span><span class="option-name">' + opt.name + '</span></div>' +
-      '<div class="option-desc">' + opt.description + '</div>' +
-      '<div class="option-cost"><span class="cost-tag">&#8377;' + opt.budgetCost + 'L</span><span class="cost-tag">&#9200; ' + opt.analystCost + ' Analyst Hrs</span>' +
-      '<span class="cost-tag" style="background:' + (opt.changeDelta >= 0 ? '#E8F5E9' : '#FEECEC') + ';color:' + (opt.changeDelta >= 0 ? 'var(--success)' : 'var(--danger)') + ';">CC ' + sign + opt.changeDelta + '</span></div></div>';
+  document.getElementById('data-brief-list').innerHTML = ROUND_1_DATA_BRIEF.map(function(q){ return '<li>'+q+'</li>'; }).join('');
+  document.getElementById('options-list').innerHTML = ROUND_1_OPTIONS.map(function(opt){
+    var sign=opt.changeDelta>=0?'+':'';
+    return '<div class="option-card" data-code="'+opt.code+'" onclick="selectOption(\''+opt.code+'\',ROUND_1_OPTIONS)">'+
+      '<div class="option-header"><span class="option-code">'+opt.code+'</span><span class="option-name">'+opt.name+'</span></div>'+
+      '<div class="option-desc">'+opt.description+'</div>'+
+      '<div class="option-cost"><span class="cost-tag">&#8377;'+opt.budgetCost+'L</span><span class="cost-tag">&#9200; '+opt.analystCost+' Analyst Hrs</span>'+
+      '<span class="cost-tag" style="background:'+(opt.changeDelta>=0?'#E8F5E9':'#FEECEC')+';color:'+(opt.changeDelta>=0?'var(--success)':'var(--danger)')+';">CC '+sign+opt.changeDelta+'</span></div></div>';
   }).join('');
-
-  async function loadRound() {
-    var btn = document.getElementById('submit-btn');
-    try {
-      var balance = await fetchTeamBalance();
-      var rs      = await fetchRoundState();
-      var subs    = (balance && balance.submissions) || {};
-      buildRoundNav(ROUND_N, rs, subs);
-
-      if (!rs || rs['r' + ROUND_N] !== 'OPEN') {
-        lockRoundPage(ROUND_N); return;
+  async function loadRound(){
+    var btn=document.getElementById('submit-btn');
+    try{
+      var balance=await fetchTeamBalance();
+      var rs=await fetchRoundState();
+      var subs=(balance&&balance.submissions)||{};
+      buildRoundNav(ROUND_N,rs,subs);
+      if(!rs||rs['r'+ROUND_N]!=='OPEN'){lockRoundPage(ROUND_N);return;}
+      if(subs['r'+ROUND_N]){
+        showRoundResourceSnapshot(ROUND_N,balance);  // show historical balance
+        showAlert('info','Your team has already submitted Round '+ROUND_N+'. This page is read-only.');
+        btn.disabled=true;btn.textContent='Already Submitted';
+        document.querySelectorAll('.option-card').forEach(function(el){el.style.pointerEvents='none';el.style.opacity='0.6';});
       }
-      if (subs['r' + ROUND_N]) {
-        showAlert('info', 'Your team has already submitted Round ' + ROUND_N + '. This page is read-only.');
-        btn.disabled = true; btn.textContent = 'Already Submitted';
-        document.querySelectorAll('.option-card').forEach(function(el){ el.style.pointerEvents='none'; el.style.opacity='0.6'; });
-      }
-    } catch(e) {
-      console.error('[Disha] loadRound error:', e.message);
-      showAlert('error', 'Could not load round data: ' + e.message);
-      btn.disabled = true;
-    }
+    }catch(e){console.error('[Disha] loadRound:',e.message);showAlert('error','Could not load round data: '+e.message);btn.disabled=true;}
   }
   loadRound();
 </script>
