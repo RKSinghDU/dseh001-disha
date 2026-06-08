@@ -1,12 +1,13 @@
 // ============================================================
 // DSEH001 Project Disha — Shared Client-Side Logic
-// v1.4 — Two navigation fixes:
-//   FIX 1: After successful submission, redirect to home.html
-//           after 3 seconds so teams are never stranded on a
-//           submitted round page with no forward navigation.
-//   FIX 2: Previous button always enabled for n > 1 — teams
-//           can always review past submitted rounds.
-//           Next remains gated: only OPEN or submitted rounds.
+// v1.5 — Historical resource snapshot on submitted round pages:
+//   showRoundResourceSnapshot(roundN, balance) — called by
+//   loadRound() after fetching balance. If the round is already
+//   submitted AND has a v1.4 snapshot, shows the balance at the
+//   END of that round with a clear "as at close of Round N" label.
+//   Falls back to live balance for rounds without a snapshot
+//   (pre-v1.4 submissions) with a note explaining this.
+// v1.4 — Post-submission redirect (3s); Previous always enabled.
 // v1.3 — lockRoundPage, buildRoundNav, scorecard enrichment.
 // v1.2 — Auth logging, error surfacing, round-state key fix.
 // ============================================================
@@ -162,6 +163,92 @@ async function fetchRoundState() {
 }
 
 // =============================================================
+// HISTORICAL RESOURCE SNAPSHOT (v1.5)
+//
+// Call this from loadRound() AFTER the round is confirmed
+// submitted. It replaces the resource tiles with the exact
+// balance at the close of that round.
+//
+// Usage:
+//   showRoundResourceSnapshot(roundNumber, balance);
+//
+// If resourcesAfter snapshot exists (v1.4+ submission) → shows
+//   historical tiles with "as at close of Round N" label.
+// If snapshot is missing (older submission) → shows live
+//   balance with a note explaining it's the current balance.
+// =============================================================
+function showRoundResourceSnapshot(roundNumber, balance) {
+  var sub = balance && balance.submissions && balance.submissions['r' + roundNumber];
+  if (!sub) return;  // not submitted — nothing to do
+
+  var snapshot = sub.resourcesAfter;   // null on pre-v1.4 rows
+
+  var container = document.getElementById('resource-tiles');
+  if (!container) return;
+
+  // Add a label above the tiles to make context clear
+  var labelDiv = document.getElementById('resource-snapshot-label');
+  if (!labelDiv) {
+    labelDiv = document.createElement('div');
+    labelDiv.id = 'resource-snapshot-label';
+    labelDiv.style.cssText = 'font-size:0.82rem;color:var(--text-muted);margin-bottom:0.5rem;font-style:italic;';
+    container.parentNode.insertBefore(labelDiv, container);
+  }
+
+  if (snapshot) {
+    // Show the historical snapshot with the round label
+    labelDiv.textContent = 'Resources at close of Round ' + roundNumber + ' (read-only snapshot)';
+    renderResourceTilesFromValues(
+      snapshot.budgetRemaining,
+      snapshot.changeCapital,
+      snapshot.analystHoursRemaining,
+      true   // greyed = read-only visual
+    );
+  } else {
+    // Pre-v1.4 submission — no snapshot stored, show live with note
+    labelDiv.textContent = 'Current live balance shown (historical snapshot not available for this submission — recorded before v1.4)';
+    // Leave tiles as-is — fetchTeamBalance already rendered live balance
+  }
+}
+
+/**
+ * Render resource tiles from explicit values rather than a balance object.
+ * When readOnly=true, applies a reduced opacity to signal these are frozen.
+ */
+function renderResourceTilesFromValues(budget, changeCapital, analystHours, readOnly) {
+  var container = document.getElementById('resource-tiles');
+  if (!container) return;
+
+  var opacity = readOnly ? 'opacity:0.85;' : '';
+
+  var bCls = 'budget';
+  if (budget < 50) bCls = 'danger'; else if (budget < 120) bCls = 'warning';
+  var cCls = 'change';
+  if (changeCapital <= SIM_CONFIG.changeCapitalDanger) cCls = 'danger';
+  else if (changeCapital <= SIM_CONFIG.changeCapitalWarning) cCls = 'warning';
+  var aCls = 'analyst';
+  if (analystHours < SIM_CONFIG.analystHoursMin) aCls = 'warning';
+
+  container.style.cssText = opacity;
+  container.innerHTML =
+    '<div class="resource-tile ' + bCls + '">' +
+      '<div class="resource-label">Budget Remaining</div>' +
+      '<div class="resource-value">&#8377;' + budget + 'L</div>' +
+      '<div class="resource-sub">of &#8377;600L total (cumulative)</div>' +
+    '</div>' +
+    '<div class="resource-tile ' + cCls + '">' +
+      '<div class="resource-label">Change Capital</div>' +
+      '<div class="resource-value">' + changeCapital + '</div>' +
+      '<div class="resource-sub">/ 100 pts &mdash; persists round-to-round</div>' +
+    '</div>' +
+    '<div class="resource-tile ' + aCls + '">' +
+      '<div class="resource-label">Analyst Hours</div>' +
+      '<div class="resource-value">' + analystHours + '</div>' +
+      '<div class="resource-sub">/ 60 hrs &mdash; resets each round</div>' +
+    '</div>';
+}
+
+// =============================================================
 // LOCKED ROUND PAGE
 // =============================================================
 function lockRoundPage(roundNumber) {
@@ -187,9 +274,7 @@ function lockRoundPage(roundNumber) {
 }
 
 // =============================================================
-// ROUND NAV
-// FIX 2: Previous always enabled for n > 1 (teams can always
-//         review past rounds). Next gated to OPEN or submitted.
+// ROUND NAV — Previous always enabled for n > 1
 // =============================================================
 function buildRoundNav(n, rs, submissions) {
   rs          = rs          || {};
@@ -199,7 +284,6 @@ function buildRoundNav(n, rs, submissions) {
   const next = document.getElementById('navNext');
   if (!prev || !next) return;
 
-  // FIX 2: Previous — always navigable if n > 1
   if (n <= 1) {
     prev.classList.add('is-disabled');
     prev.removeAttribute('href');
@@ -208,7 +292,6 @@ function buildRoundNav(n, rs, submissions) {
     prev.href = 'round-' + (n - 1) + '.html';
   }
 
-  // Next — only if next round is OPEN or already submitted by this team
   if (n >= 6) {
     next.classList.add('is-disabled');
     next.removeAttribute('href');
@@ -227,7 +310,7 @@ function buildRoundNav(n, rs, submissions) {
   }
 }
 
-// --- RESOURCE TILE RENDERER ----------------------------------
+// --- RESOURCE TILE RENDERER (live balance) -------------------
 function renderResourceTiles(balance) {
   const container = document.getElementById('resource-tiles');
   if (!container) return;
@@ -244,6 +327,7 @@ function renderResourceTiles(balance) {
   let aCls = 'analyst';
   if (analyst < SIM_CONFIG.analystHoursMin) aCls = 'warning';
 
+  container.style.cssText = '';  // clear any snapshot opacity
   container.innerHTML =
     '<div class="resource-tile ' + bCls + '">' +
       '<div class="resource-label">Budget Remaining</div>' +
@@ -358,9 +442,6 @@ function showAlert(type, message) {
 }
 
 // --- ROUND SUBMISSION ----------------------------------------
-// FIX 1: After successful submission, show success message
-// then redirect to home.html after 3 seconds.
-// Teams are never stranded on a submitted page.
 async function submitRound(roundNumber) {
   const rationaleEl = document.getElementById('rationale');
   const rationale   = rationaleEl ? rationaleEl.value.trim() : '';
@@ -383,14 +464,12 @@ async function submitRound(roundNumber) {
       scribeName:    state.team.memberName,
     });
 
-    // Lock the form immediately
     document.querySelectorAll('.option-card, #rationale, #submit-btn, .audit-section input, .audit-section textarea, #shock-response').forEach(function(el) {
       if (['BUTTON','TEXTAREA','INPUT'].includes(el.tagName)) el.disabled = true;
       el.style.pointerEvents = 'none';
       el.style.opacity = '0.6';
     });
 
-    // FIX 1: Success message with countdown redirect to home
     let msg = 'Round ' + roundNumber + ' submitted successfully.';
     if (result && result.analysisWarning) msg += ' Note: ' + result.analysisWarning;
     const ac = document.getElementById('alert-container');
@@ -405,16 +484,12 @@ async function submitRound(roundNumber) {
       ac.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
 
-    // Countdown and redirect
     var count = 3;
     var timer = setInterval(function() {
       count--;
       var el = document.getElementById('countdown');
       if (el) el.textContent = count;
-      if (count <= 0) {
-        clearInterval(timer);
-        window.location.href = 'home.html';
-      }
+      if (count <= 0) { clearInterval(timer); window.location.href = 'home.html'; }
     }, 1000);
 
   } catch (err) {
