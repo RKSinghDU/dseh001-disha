@@ -4,13 +4,14 @@
  *  DSEH001 Digital HR & People Analytics Simulation
  *  Course Coordinator: Prof. R. K. Singh, University of Delhi
  *
- *  v1.3 — Submission history enriched:
- *    getTeamSubmissions() now joins Submissions tab with Scoring tab
- *    so each submission entry includes budgetCost, changeCost,
- *    analystCost, and all five axis scores + round total.
- *    getTeamBalance() returns this enriched submissions object.
- *    home.html can now display a full per-round scorecard.
+ *  v1.4 — Historical resource snapshot per round:
+ *    submitRound() now appends BudgetAfter, ChangeAfter, AnalystAfter
+ *    as columns 9-11 in the Submissions tab (appended — existing rows
+ *    without these columns return null gracefully).
+ *    getTeamSubmissions() reads and returns these as resourcesAfter
+ *    so each round page can display the exact balance at that moment.
  *
+ *  v1.3 — Submission history joined with Scoring tab.
  *  v1.2 — Leaderboard accumulation fix; round-state cache 60s.
  *  v1.1 — Auth param unification, getConfigAll public, error surfacing.
  *  v1.0 — Initial build.
@@ -95,6 +96,8 @@ const SCORING_AXES = [
 
 // =============================================================================
 // SECTION 4 — SHEET COLUMN MAPS (0-based)
+// Submissions tab: columns 0-7 are original; 8-10 are new snapshot columns.
+// Existing rows without columns 8-10 return '' — handled gracefully.
 // =============================================================================
 const COL = {
   Teams:        { TeamID: 0, TeamName: 1, MemberNames: 2 },
@@ -103,7 +106,8 @@ const COL = {
                   Analyst_Hours_Remaining: 3, Round_Last_Submitted: 4 },
   TeamState:    { TeamID: 0, Debt_Ledger: 1, Anchor_Statuses: 2, Latent_States: 3 },
   Submissions:  { TeamID: 0, Round: 1, Timestamp: 2, OptionChosen: 3,
-                  Rationale: 4, BudgetCost: 5, ChangeCost: 6, AnalystCost: 7 },
+                  Rationale: 4, BudgetCost: 5, ChangeCost: 6, AnalystCost: 7,
+                  BudgetAfter: 8, ChangeAfter: 9, AnalystAfter: 10 },
   Scoring:      { TeamID: 0, Round: 1, Analytical_Rigour: 2, Financial_Discipline: 3,
                   Equity_Compliance: 4, Adoption_Change: 5, Strategic_Coherence: 6,
                   Round_Total: 7, Cumulative_Disha_Index: 8 },
@@ -357,30 +361,48 @@ function getTeamBalance(ctx) {
 }
 
 /**
- * v1.3 FIX: getTeamSubmissions joins Submissions with Scoring
- * so each round entry now includes:
- *   optionChosen, timestamp,
- *   budgetCost, changeCost, analystCost  (from Submissions tab)
- *   analyticalRigour, financialDiscipline, equityCompliance,
- *   adoptionChange, strategicCoherence, roundTotal  (from Scoring tab)
+ * getTeamSubmissions: reads Submissions + Scoring tabs and returns
+ * an enriched object per round keyed as 'r1'..'r6'.
+ *
+ * Each entry includes:
+ *   optionChosen, timestamp
+ *   budgetCost, changeCost, analystCost   (what was spent)
+ *   resourcesAfter: { budgetRemaining, changeCapital, analystHoursRemaining }
+ *     — the EXACT balance at the END of that round (v1.4 snapshot)
+ *     — null if the row predates v1.4 (old submissions without snapshot cols)
+ *   analyticalRigour .. roundTotal, cumulative  (from Scoring tab)
  */
 function getTeamSubmissions(ctx, teamCode) {
   var target = String(teamCode).toUpperCase();
 
-  // ── Read Submissions tab ──────────────────────────────────────────────────
+  // ── Submissions tab ───────────────────────────────────────────────────────
   var dSub = getDataRows(ctx, 'Submissions');
   var subs = {};
   for (var i = 0; i < dSub.rows.length; i++) {
-    if (String(dSub.rows[i][COL.Submissions.TeamID]).toUpperCase() !== target) continue;
-    var r = Number(dSub.rows[i][COL.Submissions.Round]);
+    var row = dSub.rows[i];
+    if (String(row[COL.Submissions.TeamID]).toUpperCase() !== target) continue;
+    var r = Number(row[COL.Submissions.Round]);
+
+    // Columns 8-10 are the v1.4 snapshot — may be '' on older rows
+    var bAfter = row[COL.Submissions.BudgetAfter];
+    var cAfter = row[COL.Submissions.ChangeAfter];
+    var aAfter = row[COL.Submissions.AnalystAfter];
+    var hasSnapshot = (bAfter !== '' && bAfter !== undefined && bAfter !== null);
+
     subs['r' + r] = {
       round:        r,
-      optionChosen: String(dSub.rows[i][COL.Submissions.OptionChosen] || ''),
-      timestamp:    dSub.rows[i][COL.Submissions.Timestamp],
-      budgetCost:   Number(dSub.rows[i][COL.Submissions.BudgetCost]  || 0),
-      changeCost:   Number(dSub.rows[i][COL.Submissions.ChangeCost]  || 0),
-      analystCost:  Number(dSub.rows[i][COL.Submissions.AnalystCost] || 0),
-      // Scores filled in below
+      optionChosen: String(row[COL.Submissions.OptionChosen] || ''),
+      timestamp:    row[COL.Submissions.Timestamp],
+      budgetCost:   Number(row[COL.Submissions.BudgetCost]  || 0),
+      changeCost:   Number(row[COL.Submissions.ChangeCost]  || 0),
+      analystCost:  Number(row[COL.Submissions.AnalystCost] || 0),
+      // Historical resource snapshot (null on pre-v1.4 rows)
+      resourcesAfter: hasSnapshot ? {
+        budgetRemaining:       Number(bAfter),
+        changeCapital:         Number(cAfter),
+        analystHoursRemaining: Number(aAfter),
+      } : null,
+      // Scores filled below
       analyticalRigour:    null,
       financialDiscipline: null,
       equityCompliance:    null,
@@ -391,13 +413,13 @@ function getTeamSubmissions(ctx, teamCode) {
     };
   }
 
-  // ── Join with Scoring tab ─────────────────────────────────────────────────
+  // ── Scoring tab ───────────────────────────────────────────────────────────
   var dScore = getDataRows(ctx, 'Scoring');
   for (var j = 0; j < dScore.rows.length; j++) {
     if (String(dScore.rows[j][COL.Scoring.TeamID]).toUpperCase() !== target) continue;
-    var sr = Number(dScore.rows[j][COL.Scoring.Round]);
+    var sr  = Number(dScore.rows[j][COL.Scoring.Round]);
     var key = 'r' + sr;
-    if (!subs[key]) continue;   // score row without a matching submission — skip
+    if (!subs[key]) continue;
     subs[key].analyticalRigour    = Number(dScore.rows[j][COL.Scoring.Analytical_Rigour])    || 0;
     subs[key].financialDiscipline = Number(dScore.rows[j][COL.Scoring.Financial_Discipline])  || 0;
     subs[key].equityCompliance    = Number(dScore.rows[j][COL.Scoring.Equity_Compliance])     || 0;
@@ -464,6 +486,7 @@ function triggerShock(ctx) {
 
 // =============================================================================
 // SECTION 11 — SUBMIT ROUND
+// v1.4: stores BudgetAfter, ChangeAfter, AnalystAfter as snapshot cols 9-11
 // =============================================================================
 
 function submitRound(ctx) {
@@ -537,9 +560,13 @@ function submitRound(ctx) {
   if (auditData)     rationaleStored += '\n\n--- FAIRNESS_AUDIT ---\n' + JSON.stringify(auditData);
   if (shockResponse) rationaleStored += '\n\n--- SHOCK_RESPONSE ---\n' + JSON.stringify(shockResponse);
 
+  // v1.4: append 11 columns — original 8 + 3 snapshot columns
   var subSh = getSheet(ctx, 'Submissions');
-  subSh.appendRow([teamCode, roundNumber, new Date(), optionChosen,
-                   rationaleStored, budgetCost, changeDelta, analystCost]);
+  subSh.appendRow([
+    teamCode, roundNumber, new Date(), optionChosen,
+    rationaleStored, budgetCost, changeDelta, analystCost,
+    newBudget, newCC, newAH,          // ← BudgetAfter, ChangeAfter, AnalystAfter
+  ]);
   invalidate(ctx, 'Submissions');
 
   if (!bal) {
@@ -641,7 +668,7 @@ function updateDebtLedger(ctx, teamCode, roundNumber, optionChosen, newCC, newBu
     debts.push({ label: 'Low Change Capital', description: 'Change Capital below 30.', cost: 20, deadline: Math.min(roundNumber + 2, 6) });
   }
   if (newCC <= CC_DANGER && !debts.some(function(d){ return d.label === 'Board Intervention'; })) {
-    debts.push({ label: 'Board Intervention', description: 'Change Capital critical. Board intervention triggered.', cost: 40, deadline: Math.min(roundNumber + 1, 6) });
+    debts.push({ label: 'Board Intervention', description: 'Change Capital critical.', cost: 40, deadline: Math.min(roundNumber + 1, 6) });
   }
   if (roundNumber === 2 && (optionChosen === '2E' || optionChosen === '2A') && !debts.some(function(d){ return d.label === 'DPDP Compliance Exposure'; })) {
     debts.push({ label: 'DPDP Compliance Exposure', description: 'No privacy-by-design. Higher breach cost if Shock 1 fires.', cost: 50, deadline: 3 });
@@ -761,7 +788,7 @@ function getAllSubmissions(ctx) {
 
 function testSetup() {
   var ctx = buildCtx({});
-  Logger.log('=== Project Disha Backend v1.3 — Self-Test ===');
+  Logger.log('=== Project Disha Backend v1.4 — Self-Test ===');
   Logger.log('Sheet ID:         ' + SHEET_ID);
   Logger.log('AdminPasscode:    ' + (getConfigValue(ctx, 'AdminPasscode') ? 'SET' : 'NOT SET'));
   Logger.log('CurrentOpenRound: ' + (getConfigValue(ctx, 'CurrentOpenRound') || 'none'));
