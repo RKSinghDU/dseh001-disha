@@ -1,7 +1,13 @@
 // ============================================================
 // DSEH001 Project Disha — Shared Client-Side Logic
-// v1.3 — Fix: locked round pages now show a full lock screen
-//         hiding all content; Next/Prev nav respects round state.
+// v1.4 — Two navigation fixes:
+//   FIX 1: After successful submission, redirect to home.html
+//           after 3 seconds so teams are never stranded on a
+//           submitted round page with no forward navigation.
+//   FIX 2: Previous button always enabled for n > 1 — teams
+//           can always review past submitted rounds.
+//           Next remains gated: only OPEN or submitted rounds.
+// v1.3 — lockRoundPage, buildRoundNav, scorecard enrichment.
 // v1.2 — Auth logging, error surfacing, round-state key fix.
 // ============================================================
 
@@ -156,19 +162,12 @@ async function fetchRoundState() {
 }
 
 // =============================================================
-// LOCKED ROUND PAGE — called by every round's loadRound()
-// when the round is LOCKED and not yet submitted.
-//
-// Hides ALL content sections and replaces them with a single
-// lock screen. Students see nothing about the round's contents.
-// The Next/Prev nav is also rebuilt to skip to home.
+// LOCKED ROUND PAGE
 // =============================================================
 function lockRoundPage(roundNumber) {
-  // Hide every content section inside .container except alert-container
   document.querySelectorAll('.container > .card, .container > .cost-calculator, .container > .shock-section, .container > .audit-section')
     .forEach(function(el) { el.style.display = 'none'; });
 
-  // Show lock screen in the alert container
   const ac = document.getElementById('alert-container');
   if (ac) {
     ac.innerHTML =
@@ -183,18 +182,14 @@ function lockRoundPage(roundNumber) {
       '</div>';
   }
 
-  // Remove Next button so students cannot navigate deeper into locked rounds
   const navNext = document.getElementById('navNext');
   if (navNext) { navNext.classList.add('is-disabled'); navNext.removeAttribute('href'); }
 }
 
 // =============================================================
-// ROUND NAV — builds Previous / Home / Next buttons.
-// Called AFTER round state is known so Next is disabled for
-// locked rounds the team has not yet submitted.
-//
-// Usage in each round page (after loadRound resolves):
-//   buildRoundNav(roundNumber, roundState, submissions);
+// ROUND NAV
+// FIX 2: Previous always enabled for n > 1 (teams can always
+//         review past rounds). Next gated to OPEN or submitted.
 // =============================================================
 function buildRoundNav(n, rs, submissions) {
   rs          = rs          || {};
@@ -204,7 +199,7 @@ function buildRoundNav(n, rs, submissions) {
   const next = document.getElementById('navNext');
   if (!prev || !next) return;
 
-  // Previous — always goes back if n > 1
+  // FIX 2: Previous — always navigable if n > 1
   if (n <= 1) {
     prev.classList.add('is-disabled');
     prev.removeAttribute('href');
@@ -213,7 +208,7 @@ function buildRoundNav(n, rs, submissions) {
     prev.href = 'round-' + (n - 1) + '.html';
   }
 
-  // Next — only enabled if the next round is OPEN or already submitted
+  // Next — only if next round is OPEN or already submitted by this team
   if (n >= 6) {
     next.classList.add('is-disabled');
     next.removeAttribute('href');
@@ -363,6 +358,9 @@ function showAlert(type, message) {
 }
 
 // --- ROUND SUBMISSION ----------------------------------------
+// FIX 1: After successful submission, show success message
+// then redirect to home.html after 3 seconds.
+// Teams are never stranded on a submitted page.
 async function submitRound(roundNumber) {
   const rationaleEl = document.getElementById('rationale');
   const rationale   = rationaleEl ? rationaleEl.value.trim() : '';
@@ -384,15 +382,41 @@ async function submitRound(roundNumber) {
       submittedAt:   new Date().toISOString(),
       scribeName:    state.team.memberName,
     });
-    let msg = 'Round ' + roundNumber + ' submitted successfully. Updated resources shown above.';
-    if (result && result.analysisWarning) msg += ' Note: ' + result.analysisWarning;
-    showAlert('success', msg);
-    await fetchTeamBalance({ silent: true });
+
+    // Lock the form immediately
     document.querySelectorAll('.option-card, #rationale, #submit-btn, .audit-section input, .audit-section textarea, #shock-response').forEach(function(el) {
       if (['BUTTON','TEXTAREA','INPUT'].includes(el.tagName)) el.disabled = true;
       el.style.pointerEvents = 'none';
       el.style.opacity = '0.6';
     });
+
+    // FIX 1: Success message with countdown redirect to home
+    let msg = 'Round ' + roundNumber + ' submitted successfully.';
+    if (result && result.analysisWarning) msg += ' Note: ' + result.analysisWarning;
+    const ac = document.getElementById('alert-container');
+    if (ac) {
+      ac.innerHTML =
+        '<div class="alert alert-success" style="text-align:center;padding:1.5rem;">' +
+          '<div style="font-size:2rem;margin-bottom:0.5rem;">&#10003;</div>' +
+          '<strong>' + msg + '</strong><br>' +
+          '<span style="font-size:0.9rem;color:var(--text-muted);">Returning to dashboard in <span id="countdown">3</span> seconds&hellip;</span><br>' +
+          '<a href="home.html" class="btn btn-primary" style="margin-top:1rem;">Go to Dashboard now</a>' +
+        '</div>';
+      ac.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+
+    // Countdown and redirect
+    var count = 3;
+    var timer = setInterval(function() {
+      count--;
+      var el = document.getElementById('countdown');
+      if (el) el.textContent = count;
+      if (count <= 0) {
+        clearInterval(timer);
+        window.location.href = 'home.html';
+      }
+    }, 1000);
+
   } catch (err) {
     console.error('[Disha] submitRound caught:', err.message);
   }
