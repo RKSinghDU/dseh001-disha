@@ -4,15 +4,14 @@
  *  DSEH001 Digital HR & People Analytics Simulation
  *  Course Coordinator: Prof. R. K. Singh, University of Delhi
  *
- *  v1.2 — Three issues fixed:
- *    FIX A (Leaderboard): getLeaderboard() was overwriting byTeam[tid] on
- *           every row — so only the last round's scores survived. Now
- *           ACCUMULATES all rounds per team correctly.
- *    FIX B (Scoring tab): recordScores() already appends one row per round
- *           (correct — no overwrite). Confirmed no change needed there.
- *    FIX C (Round state cache): cache TTL reduced to 60s so admin panel
- *           open/lock changes are visible to students within 1 minute.
+ *  v1.3 — Submission history enriched:
+ *    getTeamSubmissions() now joins Submissions tab with Scoring tab
+ *    so each submission entry includes budgetCost, changeCost,
+ *    analystCost, and all five axis scores + round total.
+ *    getTeamBalance() returns this enriched submissions object.
+ *    home.html can now display a full per-round scorecard.
  *
+ *  v1.2 — Leaderboard accumulation fix; round-state cache 60s.
  *  v1.1 — Auth param unification, getConfigAll public, error surfacing.
  *  v1.0 — Initial build.
  * =============================================================================
@@ -34,7 +33,7 @@ const CC_WARNING  = 30;
 const CC_DANGER   = 10;
 const ANALYST_MIN = 20;
 
-const CACHE_TTL_STATE  = 60;    // FIX C: reduced to 60s so round open/lock is fast
+const CACHE_TTL_STATE  = 60;
 const CACHE_TTL_CONFIG = 3600;
 const CK_ROUND_STATE   = 'disha:roundState';
 const CK_CONFIG_PFX    = 'disha:config:';
@@ -220,8 +219,6 @@ function setConfigValue(ctx, key, value) {
   ctx.cache.remove(CK_CONFIG_PFX + key);
 }
 
-// Public — students call this to check shock trigger flags.
-// AdminPasscode is stripped before returning.
 function getConfigAll(ctx) {
   var d = getDataRows(ctx, 'Config');
   var out = {};
@@ -246,7 +243,6 @@ function findTeam(ctx, teamId) {
   return null;
 }
 
-// Accepts both 'memberPasscode' (round pages) and 'passcode' (login page).
 function verifyMember(ctx) {
   var memberName = String(ctx.params.memberName || '').trim();
   var passcode   = String(ctx.params.memberPasscode || ctx.params.passcode || '').trim();
@@ -360,18 +356,57 @@ function getTeamBalance(ctx) {
   };
 }
 
+/**
+ * v1.3 FIX: getTeamSubmissions joins Submissions with Scoring
+ * so each round entry now includes:
+ *   optionChosen, timestamp,
+ *   budgetCost, changeCost, analystCost  (from Submissions tab)
+ *   analyticalRigour, financialDiscipline, equityCompliance,
+ *   adoptionChange, strategicCoherence, roundTotal  (from Scoring tab)
+ */
 function getTeamSubmissions(ctx, teamCode) {
-  var d = getDataRows(ctx, 'Submissions');
   var target = String(teamCode).toUpperCase();
+
+  // ── Read Submissions tab ──────────────────────────────────────────────────
+  var dSub = getDataRows(ctx, 'Submissions');
   var subs = {};
-  for (var i = 0; i < d.rows.length; i++) {
-    if (String(d.rows[i][COL.Submissions.TeamID]).toUpperCase() !== target) continue;
-    var r = d.rows[i][COL.Submissions.Round];
+  for (var i = 0; i < dSub.rows.length; i++) {
+    if (String(dSub.rows[i][COL.Submissions.TeamID]).toUpperCase() !== target) continue;
+    var r = Number(dSub.rows[i][COL.Submissions.Round]);
     subs['r' + r] = {
-      optionChosen: d.rows[i][COL.Submissions.OptionChosen],
-      timestamp:    d.rows[i][COL.Submissions.Timestamp],
+      round:        r,
+      optionChosen: String(dSub.rows[i][COL.Submissions.OptionChosen] || ''),
+      timestamp:    dSub.rows[i][COL.Submissions.Timestamp],
+      budgetCost:   Number(dSub.rows[i][COL.Submissions.BudgetCost]  || 0),
+      changeCost:   Number(dSub.rows[i][COL.Submissions.ChangeCost]  || 0),
+      analystCost:  Number(dSub.rows[i][COL.Submissions.AnalystCost] || 0),
+      // Scores filled in below
+      analyticalRigour:    null,
+      financialDiscipline: null,
+      equityCompliance:    null,
+      adoptionChange:      null,
+      strategicCoherence:  null,
+      roundTotal:          null,
+      cumulative:          null,
     };
   }
+
+  // ── Join with Scoring tab ─────────────────────────────────────────────────
+  var dScore = getDataRows(ctx, 'Scoring');
+  for (var j = 0; j < dScore.rows.length; j++) {
+    if (String(dScore.rows[j][COL.Scoring.TeamID]).toUpperCase() !== target) continue;
+    var sr = Number(dScore.rows[j][COL.Scoring.Round]);
+    var key = 'r' + sr;
+    if (!subs[key]) continue;   // score row without a matching submission — skip
+    subs[key].analyticalRigour    = Number(dScore.rows[j][COL.Scoring.Analytical_Rigour])    || 0;
+    subs[key].financialDiscipline = Number(dScore.rows[j][COL.Scoring.Financial_Discipline])  || 0;
+    subs[key].equityCompliance    = Number(dScore.rows[j][COL.Scoring.Equity_Compliance])     || 0;
+    subs[key].adoptionChange      = Number(dScore.rows[j][COL.Scoring.Adoption_Change])       || 0;
+    subs[key].strategicCoherence  = Number(dScore.rows[j][COL.Scoring.Strategic_Coherence])   || 0;
+    subs[key].roundTotal          = Number(dScore.rows[j][COL.Scoring.Round_Total])            || 0;
+    subs[key].cumulative          = Number(dScore.rows[j][COL.Scoring.Cumulative_Disha_Index]) || 0;
+  }
+
   return subs;
 }
 
@@ -571,16 +606,9 @@ function computeAutoScores(roundNumber, optionChosen, analystCost, newBudget, ne
   };
 }
 
-/**
- * recordScores: appends ONE row per round per team to the Scoring tab.
- * Each round gets its own row — nothing is overwritten.
- * The Cumulative_Disha_Index column is the running total across all rounds.
- */
 function recordScores(ctx, teamCode, roundNumber, scores) {
   var sh  = getSheet(ctx, 'Scoring');
   var all = sh.getDataRange().getValues();
-
-  // Sum all previous rounds for this team (skip current round if it somehow exists)
   var cumulative = 0;
   for (var i = 1; i < all.length; i++) {
     if (String(all[i][COL.Scoring.TeamID]).toUpperCase() === teamCode &&
@@ -589,17 +617,11 @@ function recordScores(ctx, teamCode, roundNumber, scores) {
     }
   }
   cumulative += scores.Round_Total;
-
   sh.appendRow([
-    teamCode,
-    roundNumber,
-    scores.Analytical_Rigour,
-    scores.Financial_Discipline,
-    scores.Equity_Compliance,
-    scores.Adoption_Change,
-    scores.Strategic_Coherence,
-    scores.Round_Total,
-    cumulative,
+    teamCode, roundNumber,
+    scores.Analytical_Rigour, scores.Financial_Discipline,
+    scores.Equity_Compliance, scores.Adoption_Change,
+    scores.Strategic_Coherence, scores.Round_Total, cumulative,
   ]);
 }
 
@@ -616,7 +638,7 @@ function updateDebtLedger(ctx, teamCode, roundNumber, optionChosen, newCC, newBu
   }
 
   if (newCC < CC_WARNING && newCC > CC_DANGER && !debts.some(function(d){ return d.label === 'Low Change Capital'; })) {
-    debts.push({ label: 'Low Change Capital', description: 'Change Capital below 30. Some options may be unavailable.', cost: 20, deadline: Math.min(roundNumber + 2, 6) });
+    debts.push({ label: 'Low Change Capital', description: 'Change Capital below 30.', cost: 20, deadline: Math.min(roundNumber + 2, 6) });
   }
   if (newCC <= CC_DANGER && !debts.some(function(d){ return d.label === 'Board Intervention'; })) {
     debts.push({ label: 'Board Intervention', description: 'Change Capital critical. Board intervention triggered.', cost: 40, deadline: Math.min(roundNumber + 1, 6) });
@@ -664,23 +686,12 @@ function resetAnalystHoursForAllTeams(ctx) {
 // SECTION 15 — LEADERBOARD & SUBMISSIONS (admin)
 // =============================================================================
 
-/**
- * FIX A: getLeaderboard now correctly ACCUMULATES all rounds per team.
- *
- * Previous bug: byTeam[tid] was overwritten on every Scoring row, so only
- * the last round's individual axis scores were returned (though dishaIndex
- * was correct because it reads Cumulative_Disha_Index from the last row).
- *
- * Fix: collect all rows per team into an array, then sum the axis scores
- * across rounds. Also returns a per-round breakdown for the admin panel.
- */
 function getLeaderboard(ctx) {
   requireAdmin(ctx);
   var sh  = getSheet(ctx, 'Scoring');
   var all = sh.getDataRange().getValues();
   if (all.length < 2) return { leaderboard: [] };
 
-  // Collect all rows per team
   var teamRows = {};
   for (var i = 1; i < all.length; i++) {
     var tid = String(all[i][COL.Scoring.TeamID]).toUpperCase();
@@ -698,7 +709,6 @@ function getLeaderboard(ctx) {
     });
   }
 
-  // Get team names
   var teams   = getDataRows(ctx, 'Teams').rows;
   var nameMap = {};
   for (var t = 0; t < teams.length; t++) {
@@ -707,33 +717,20 @@ function getLeaderboard(ctx) {
 
   var lb = Object.keys(teamRows).map(function(tid) {
     var rows = teamRows[tid];
-
-    // Sum axis scores across all rounds
-    var totAR = 0, totFD = 0, totEC = 0, totAC = 0, totSC = 0, totRT = 0;
+    var totAR=0, totFD=0, totEC=0, totAC=0, totSC=0;
     rows.forEach(function(r) {
-      totAR += r.analyticalRigour;
-      totFD += r.financialDiscipline;
-      totEC += r.equityCompliance;
-      totAC += r.adoptionChange;
+      totAR += r.analyticalRigour; totFD += r.financialDiscipline;
+      totEC += r.equityCompliance; totAC += r.adoptionChange;
       totSC += r.strategicCoherence;
-      totRT += r.roundTotal;
     });
-
-    // Disha Index = cumulative from the most recent row (already correct in sheet)
     var latestRow = rows.reduce(function(a, b) { return b.round > a.round ? b : a; }, rows[0]);
-
     return {
-      teamID:              tid,
-      teamName:            nameMap[tid] || tid,
-      analyticalRigour:    totAR,
-      financialDiscipline: totFD,
-      equityCompliance:    totEC,
-      adoptionChange:      totAC,
-      strategicCoherence:  totSC,
-      roundsPlayed:        rows.length,
-      dishaIndex:          latestRow.cumulative,
-      // Per-round breakdown for admin panel display
-      roundBreakdown:      rows.sort(function(a, b) { return a.round - b.round; }),
+      teamID: tid, teamName: nameMap[tid] || tid,
+      analyticalRigour: totAR, financialDiscipline: totFD,
+      equityCompliance: totEC, adoptionChange: totAC,
+      strategicCoherence: totSC, roundsPlayed: rows.length,
+      dishaIndex: latestRow.cumulative,
+      roundBreakdown: rows.sort(function(a, b) { return a.round - b.round; }),
     };
   });
 
@@ -752,7 +749,6 @@ function getAllSubmissions(ctx) {
       roundNumber:  d.rows[i][COL.Submissions.Round],
       optionChosen: d.rows[i][COL.Submissions.OptionChosen],
       submittedAt:  d.rows[i][COL.Submissions.Timestamp],
-      scribeName:   '',
     });
   }
   subs.sort(function(a, b) { return new Date(b.submittedAt) - new Date(a.submittedAt); });
@@ -765,7 +761,7 @@ function getAllSubmissions(ctx) {
 
 function testSetup() {
   var ctx = buildCtx({});
-  Logger.log('=== Project Disha Backend v1.2 — Self-Test ===');
+  Logger.log('=== Project Disha Backend v1.3 — Self-Test ===');
   Logger.log('Sheet ID:         ' + SHEET_ID);
   Logger.log('AdminPasscode:    ' + (getConfigValue(ctx, 'AdminPasscode') ? 'SET' : 'NOT SET'));
   Logger.log('CurrentOpenRound: ' + (getConfigValue(ctx, 'CurrentOpenRound') || 'none'));
