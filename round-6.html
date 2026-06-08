@@ -18,7 +18,7 @@
 <div class="container">
   <div id="alert-container"></div>
   <div class="alert alert-info"><strong>&#127881; Final Round.</strong> D2 (Future-of-Work Board Memo) is due at close &mdash; submit via Google Classroom. Your Remediation Table must cite specific before/after figures from Gig_Workforce and PeopleAnalytics_Fact.</div>
-  <div class="card"><div class="card-title">Current Resources</div><div id="resource-tiles" class="resource-grid"></div></div>
+  <div class="card"><div class="card-title">Resources</div><div id="resource-tiles" class="resource-grid"></div></div>
   <div class="card">
     <div class="card-title">&#128202; Section 1 &mdash; Guided Dataset Analysis</div>
     <div class="alert alert-info">Open <strong>Gig_Workforce</strong> and <strong>PeopleAnalytics_Fact</strong> tabs.</div>
@@ -68,7 +68,12 @@
       var subs=(balance&&balance.submissions)||{};
       buildRoundNav(ROUND_N,rs,subs);
       if(!rs||rs['r'+ROUND_N]!=='OPEN'){lockRoundPage(ROUND_N);return;}
-      if(subs['r'+ROUND_N]){showAlert('info','Already submitted. Read-only.');btn.disabled=true;btn.textContent='Already Submitted';document.querySelectorAll('.option-card').forEach(function(el){el.style.pointerEvents='none';el.style.opacity='0.6';});}
+      if(subs['r'+ROUND_N]){
+        showRoundResourceSnapshot(ROUND_N,balance);
+        showAlert('info','Already submitted. Read-only.');
+        btn.disabled=true;btn.textContent='Already Submitted';
+        document.querySelectorAll('.option-card').forEach(function(el){el.style.pointerEvents='none';el.style.opacity='0.6';});
+      }
     }catch(e){console.error('[Disha] loadRound:',e.message);showAlert('error','Could not load round data: '+e.message);btn.disabled=true;}
   }
   loadRound();
