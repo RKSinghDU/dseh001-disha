@@ -29,9 +29,9 @@
     </div>
   </div>
 
-  <!-- Submission History (only shown once a round has been submitted) -->
+  <!-- Per-Round Scorecard — shown once at least one round is submitted -->
   <div class="card" id="scores-card" style="display:none;">
-    <div class="card-title">&#127942; Your Submission History</div>
+    <div class="card-title">&#127942; Round Scorecard</div>
     <div id="scores-table-container"></div>
   </div>
 
@@ -42,7 +42,7 @@
     <div id="debt-ledger-container"></div>
   </div>
 
-  <!-- Round Navigation — only OPEN and SUBMITTED rounds shown; LOCKED rounds hidden -->
+  <!-- Round Navigation -->
   <div class="card">
     <div class="card-title">Simulation Rounds</div>
     <div id="rounds-loading" style="color:var(--text-muted);font-size:0.9rem;padding:0.5rem 0;">Loading round status&hellip;</div>
@@ -74,16 +74,13 @@
     </table>
   </div>
 
-  <!-- Quick Links — instructor fills in real URLs below before semester starts -->
+  <!-- Quick Links -->
   <div class="card" id="quicklinks-card">
     <div class="card-title">Quick Links</div>
     <div id="quicklinks-container" style="display:flex;flex-wrap:wrap;gap:0.75rem;"></div>
-    <p style="font-size:0.8rem;color:var(--text-muted);margin-top:0.75rem;">
-      Links are activated by your instructor as each deadline approaches.
-    </p>
+    <p style="font-size:0.8rem;color:var(--text-muted);margin-top:0.75rem;">Links are activated by your instructor as each deadline approaches.</p>
   </div>
-
-</div><!-- /container -->
+</div>
 
 <div id="loading-overlay" class="loading-overlay">
   <div class="loading-box"><div class="spinner"></div><div>Loading&hellip;</div></div>
@@ -92,161 +89,206 @@
 
 <script src="simulation.js"></script>
 <script>
-// ============================================================
-// QUICK LINKS CONFIGURATION
-// Paste the real URLs here before the semester starts.
-// Set url: null to hide a link entirely until it is ready.
-// ============================================================
+// ── Quick Links config ────────────────────────────────────────────────────────
 var QUICK_LINKS = [
-  {
-    label: 'GreenLeaf Dataset',
-    url:   'https://drive.google.com/drive/folders/1DPDpBN9ZeiVIpeRJsdVAMgVSoL4tXy19',
-    // Replace above with the direct shareable link to GreenLeaf_Disha_DSEH001_Dataset.xlsx
-  },
-  {
-    label: 'Round Briefs Folder',
-    url:   null,   // paste Google Drive folder link when ready
-  },
-  {
-    label: 'D1 Submission',
-    url:   null,   // paste Google Classroom assignment link when ready
-  },
-  {
-    label: 'D2 Submission',
-    url:   null,   // paste Google Classroom assignment link when ready
-  },
-  {
-    label: 'Reflection Form',
-    url:   null,   // paste Google Form link when ready
-  },
+  { label: 'GreenLeaf Dataset',   url: 'https://drive.google.com/drive/folders/1DPDpBN9ZeiVIpeRJsdVAMgVSoL4tXy19' },
+  { label: 'Round Briefs Folder', url: null },
+  { label: 'D1 Submission',       url: null },
+  { label: 'D2 Submission',       url: null },
+  { label: 'Reflection Form',     url: null },
 ];
 
-// Round metadata — title, key event, page filename
+// ── Round metadata ────────────────────────────────────────────────────────────
 var ROUND_META = [
-  { n:1, title:'The Diagnosis',    event:'Baseline dataset analysis',              page:'round-1.html' },
-  { n:2, title:'The Architecture', event:'D1 due at close',                        page:'round-2.html' },
-  { n:3, title:'The Rollout',      event:'Shock Event possible mid-round',         page:'round-3.html' },
-  { n:4, title:'The Audit',        event:'Algorithmic Fairness Audit',             page:'round-4.html' },
-  { n:5, title:'The Story',        event:'Shock Event possible mid-round',         page:'round-5.html' },
-  { n:6, title:'The Future',       event:'D2 due at close',                        page:'round-6.html' },
+  { n:1, title:'The Diagnosis',    event:'Baseline dataset analysis',         page:'round-1.html' },
+  { n:2, title:'The Architecture', event:'D1 due at close',                   page:'round-2.html' },
+  { n:3, title:'The Rollout',      event:'Shock Event possible mid-round',    page:'round-3.html' },
+  { n:4, title:'The Audit',        event:'Algorithmic Fairness Audit',        page:'round-4.html' },
+  { n:5, title:'The Story',        event:'Shock Event possible mid-round',    page:'round-5.html' },
+  { n:6, title:'The Future',       event:'D2 due at close',                   page:'round-6.html' },
 ];
 
-// ============================================================
-// DASHBOARD INIT
-// ============================================================
 initSimulation();
 renderQuickLinks();
 
 async function loadDashboard() {
   try {
-    var balance    = await fetchTeamBalance();
-    var rs         = await fetchRoundState();
+    var balance = await fetchTeamBalance();
+    var rs      = await fetchRoundState();
     renderRoundsTable(rs, balance);
-    renderSubmissionHistory(balance);
+    renderScorecard(balance);
   } catch(e) {
     console.error('[Disha] Dashboard load error:', e.message);
-    document.getElementById('rounds-loading').textContent =
-      'Could not load round status: ' + e.message;
+    document.getElementById('rounds-loading').textContent = 'Could not load round status: ' + e.message;
   }
 }
 
-// ============================================================
-// ROUNDS TABLE
-// Only OPEN rounds and already-SUBMITTED rounds are shown.
-// LOCKED rounds that have never been submitted are hidden
-// completely — no title, no clue about what is coming.
-// ============================================================
+// ── Rounds table ──────────────────────────────────────────────────────────────
 function renderRoundsTable(rs, balance) {
   var submissions = (balance && balance.submissions) || {};
-  var tbody  = document.getElementById('rounds-tbody');
-  var rows   = '';
-  var shown  = 0;
+  var tbody = document.getElementById('rounds-tbody');
+  var rows  = '';
+  var shown = 0;
 
   ROUND_META.forEach(function(meta) {
     var lockKey   = 'r' + meta.n;
     var lockState = rs ? rs[lockKey] : 'LOCKED';
     var submitted = !!submissions[lockKey];
-
-    // HIDE if locked AND never submitted
     if (lockState !== 'OPEN' && !submitted) return;
-
     shown++;
-    var statusBadge, actionCell;
 
+    var badge, action;
     if (submitted) {
-      statusBadge = '<span style="background:var(--success);color:white;padding:0.2rem 0.7rem;border-radius:4px;font-size:0.85rem;">Submitted &#10003;</span>';
-      actionCell  = '<a href="' + meta.page + '" class="btn btn-secondary" style="padding:0.35rem 0.9rem;font-size:0.85rem;">View</a>';
+      badge  = '<span style="background:var(--success);color:white;padding:0.2rem 0.7rem;border-radius:4px;font-size:0.85rem;">Submitted &#10003;</span>';
+      action = '<a href="' + meta.page + '" class="btn btn-secondary" style="padding:0.35rem 0.9rem;font-size:0.85rem;">View</a>';
     } else {
-      // OPEN and not yet submitted
-      statusBadge = '<span style="background:var(--teal);color:white;padding:0.2rem 0.7rem;border-radius:4px;font-size:0.85rem;">OPEN</span>';
-      actionCell  = '<a href="' + meta.page + '" class="btn btn-primary" style="padding:0.35rem 0.9rem;font-size:0.85rem;">Enter Round ' + meta.n + '</a>';
+      badge  = '<span style="background:var(--teal);color:white;padding:0.2rem 0.7rem;border-radius:4px;font-size:0.85rem;">OPEN</span>';
+      action = '<a href="' + meta.page + '" class="btn btn-primary" style="padding:0.35rem 0.9rem;font-size:0.85rem;">Enter Round ' + meta.n + '</a>';
     }
-
-    rows += '<tr>' +
-      '<td><strong>R' + meta.n + '</strong></td>' +
-      '<td>' + meta.title + '</td>' +
-      '<td style="font-size:0.85rem;color:var(--text-muted);">' + meta.event + '</td>' +
-      '<td>' + statusBadge + '</td>' +
-      '<td>' + actionCell + '</td>' +
-      '</tr>';
+    rows += '<tr><td><strong>R' + meta.n + '</strong></td><td>' + meta.title + '</td>' +
+            '<td style="font-size:0.85rem;color:var(--text-muted);">' + meta.event + '</td>' +
+            '<td>' + badge + '</td><td>' + action + '</td></tr>';
   });
 
   tbody.innerHTML = rows;
-
-  document.getElementById('rounds-loading').style.display  = 'none';
-  document.getElementById('rounds-content').style.display  = 'block';
-
+  document.getElementById('rounds-loading').style.display = 'none';
+  document.getElementById('rounds-content').style.display = 'block';
   if (shown === 0) {
-    document.getElementById('rounds-table').style.display   = 'none';
-    document.getElementById('no-rounds-msg').style.display  = 'block';
+    document.getElementById('rounds-table').style.display  = 'none';
+    document.getElementById('no-rounds-msg').style.display = 'block';
   }
 }
 
-// ============================================================
-// SUBMISSION HISTORY
-// Shows option chosen and timestamp per round — visible only
-// after at least one round has been submitted.
-// ============================================================
-function renderSubmissionHistory(balance) {
+// ── Per-Round Scorecard ───────────────────────────────────────────────────────
+// Shows one row per submitted round with:
+//   Option chosen · Resources spent · Five axis scores · Round total
+// Strategic Coherence shows a pencil icon when it is still the default
+// provisional score (= 2) to signal instructor has not yet reviewed it.
+function renderScorecard(balance) {
   var submissions = (balance && balance.submissions) || {};
   var played = ROUND_META.filter(function(m) { return !!submissions['r' + m.n]; });
   if (played.length === 0) return;
 
-  var html = '<table><thead><tr><th>Round</th><th>Option Chosen</th><th>Submitted</th></tr></thead><tbody>';
+  var sign = function(n) { return n > 0 ? '+' + n : '' + n; };
+  var dot  = function(score, max) {
+    // render score/max as filled dots
+    max = max || 4;
+    var filled = '<span style="color:var(--teal);">&#11044;</span>';
+    var empty  = '<span style="color:var(--border);">&#11044;</span>';
+    var out = '';
+    for (var i = 1; i <= max; i++) { out += (i <= score ? filled : empty); }
+    return out;
+  };
+
+  // Running totals for the summary footer
+  var totAR=0, totFD=0, totEC=0, totAC=0, totSC=0, totRT=0;
+
+  var rows = '';
   played.forEach(function(meta) {
     var sub = submissions['r' + meta.n];
     var ts  = sub.timestamp
-      ? new Date(sub.timestamp).toLocaleString('en-IN', { dateStyle:'medium', timeStyle:'short' })
+      ? new Date(sub.timestamp).toLocaleString('en-IN', { dateStyle:'short', timeStyle:'short' })
       : '—';
-    html += '<tr>' +
-      '<td><strong>R' + meta.n + ' &mdash; ' + meta.title + '</strong></td>' +
-      '<td>' + (sub.optionChosen || '—') + '</td>' +
-      '<td style="font-size:0.85rem;color:var(--text-muted);">' + ts + '</td>' +
+
+    // Costs
+    var bCost = sub.budgetCost  != null ? sub.budgetCost  : '—';
+    var cCost = sub.changeCost  != null ? sub.changeCost  : '—';
+    var aCost = sub.analystCost != null ? sub.analystCost : '—';
+    var cSign = (typeof sub.changeCost === 'number') ? sign(sub.changeCost) : '—';
+
+    // Scores (null means instructor has not released them yet)
+    var scoresAvailable = sub.roundTotal != null;
+    var ar = scoresAvailable ? sub.analyticalRigour    : null;
+    var fd = scoresAvailable ? sub.financialDiscipline : null;
+    var ec = scoresAvailable ? sub.equityCompliance    : null;
+    var ac = scoresAvailable ? sub.adoptionChange      : null;
+    var sc = scoresAvailable ? sub.strategicCoherence  : null;
+    var rt = scoresAvailable ? sub.roundTotal          : null;
+
+    if (scoresAvailable) {
+      totAR += ar; totFD += fd; totEC += ec;
+      totAC += ac; totSC += sc; totRT += rt;
+    }
+
+    // Pending badge if scores not yet available
+    var scoreCells;
+    if (!scoresAvailable) {
+      scoreCells = '<td colspan="6" style="text-align:center;color:var(--text-muted);font-size:0.82rem;font-style:italic;">Scores released by instructor after debrief</td>';
+    } else {
+      // SC = 2 is the provisional default — flag it
+      var scCell = sc === 2
+        ? dot(sc, 4) + ' <span title="Provisional — instructor review pending" style="color:var(--warning);font-size:0.75rem;">&#9998;</span>'
+        : dot(sc, 4);
+      scoreCells =
+        '<td style="text-align:center;">' + dot(ar, 4) + '<br><span style="font-size:0.75rem;color:var(--text-muted);">AR</span></td>' +
+        '<td style="text-align:center;">' + dot(fd, 4) + '<br><span style="font-size:0.75rem;color:var(--text-muted);">FD</span></td>' +
+        '<td style="text-align:center;">' + dot(ec, 4) + '<br><span style="font-size:0.75rem;color:var(--text-muted);">EC</span></td>' +
+        '<td style="text-align:center;">' + dot(ac, 4) + '<br><span style="font-size:0.75rem;color:var(--text-muted);">AC</span></td>' +
+        '<td style="text-align:center;">' + scCell    + '<br><span style="font-size:0.75rem;color:var(--text-muted);">SC</span></td>' +
+        '<td style="text-align:center;font-weight:700;color:var(--teal);">' + rt + '/20</td>';
+    }
+
+    rows += '<tr>' +
+      '<td><strong>R' + meta.n + '</strong><br><span style="font-size:0.75rem;color:var(--text-muted);">' + meta.title + '</span></td>' +
+      '<td><strong>' + (sub.optionChosen || '—') + '</strong><br><span style="font-size:0.75rem;color:var(--text-muted);">' + ts + '</span></td>' +
+      '<td style="font-size:0.85rem;">&#8377;' + bCost + 'L&nbsp;&nbsp;CC&nbsp;' + cSign + '<br><span style="color:var(--text-muted);">' + aCost + '&nbsp;hrs</span></td>' +
+      scoreCells +
       '</tr>';
   });
-  html += '</tbody></table>';
-  html += '<p style="font-size:0.82rem;color:var(--text-muted);margin-top:0.75rem;">' +
-    'Detailed axis scores (Analytical Rigour, Financial Discipline, Equity &amp; Compliance, ' +
-    'Adoption &amp; Change, Strategic Coherence) are reviewed and released by your instructor after each debrief.' +
+
+  // Summary footer
+  var footerCells;
+  if (totRT > 0) {
+    footerCells =
+      '<td style="text-align:center;font-weight:700;">' + totAR + '</td>' +
+      '<td style="text-align:center;font-weight:700;">' + totFD + '</td>' +
+      '<td style="text-align:center;font-weight:700;">' + totEC + '</td>' +
+      '<td style="text-align:center;font-weight:700;">' + totAC + '</td>' +
+      '<td style="text-align:center;font-weight:700;">' + totSC + '</td>' +
+      '<td style="text-align:center;font-weight:700;color:var(--teal);font-size:1.05rem;">' + totRT + '</td>';
+  } else {
+    footerCells = '<td colspan="6"></td>';
+  }
+
+  var html =
+    '<div style="overflow-x:auto;">' +
+    '<table style="min-width:700px;">' +
+    '<thead><tr>' +
+      '<th>Round</th>' +
+      '<th>Option</th>' +
+      '<th>Resources spent</th>' +
+      '<th title="Analytical Rigour">AR</th>' +
+      '<th title="Financial Discipline">FD</th>' +
+      '<th title="Equity &amp; Compliance">EC</th>' +
+      '<th title="Adoption &amp; Change">AC</th>' +
+      '<th title="Strategic Coherence &#9998; = instructor review pending">SC</th>' +
+      '<th>Total</th>' +
+    '</tr></thead>' +
+    '<tbody>' + rows + '</tbody>' +
+    '<tfoot><tr>' +
+      '<td colspan="3" style="font-weight:700;color:var(--teal);">Cumulative Disha Index</td>' +
+      footerCells +
+    '</tr></tfoot>' +
+    '</table></div>' +
+    '<p style="font-size:0.78rem;color:var(--text-muted);margin-top:0.75rem;">' +
+      'AR = Analytical Rigour &nbsp;|&nbsp; FD = Financial Discipline &nbsp;|&nbsp; ' +
+      'EC = Equity &amp; Compliance &nbsp;|&nbsp; AC = Adoption &amp; Change &nbsp;|&nbsp; ' +
+      'SC = Strategic Coherence &nbsp;|&nbsp; Each axis 0&ndash;4. ' +
+      '&#9998; = instructor review of SC pending after debrief.' +
     '</p>';
 
   document.getElementById('scores-table-container').innerHTML = html;
   document.getElementById('scores-card').style.display = 'block';
 }
 
-// ============================================================
-// QUICK LINKS — only renders links where url is not null
-// ============================================================
+// ── Quick links ───────────────────────────────────────────────────────────────
 function renderQuickLinks() {
   var container = document.getElementById('quicklinks-container');
   var active    = QUICK_LINKS.filter(function(l) { return !!l.url; });
-
   if (active.length === 0) {
-    // Nothing ready yet — hide the card entirely
     document.getElementById('quicklinks-card').style.display = 'none';
     return;
   }
-
   container.innerHTML = active.map(function(l) {
     return '<a href="' + l.url + '" target="_blank" class="btn btn-secondary">' + l.label + '</a>';
   }).join('');
